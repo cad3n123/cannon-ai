@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use std::f32::consts::PI;
 
 use raylib::{
@@ -20,6 +22,33 @@ const BULLET_HEIGHT: f32 = 2.5 * BULLET_SIZE as f32;
 pub struct Point {
     pub x: f32,
     pub y: f32,
+}
+
+impl Point {
+    pub fn sum_to_borrowed(&mut self, other: &Point) -> &mut Point {
+        self.x += other.x;
+        self.y += other.y;
+        self
+    }
+    pub fn sum_to_owned(mut self, other: &Point) -> Point {
+        self.sum_to_borrowed(other);
+        self
+    }
+    pub fn sum(&self, other: &Point) -> Point {
+        self.clone().sum_to_owned(other)
+    }
+    pub fn scale_to_borrowed(&mut self, scalar: f32) -> &mut Point {
+        self.x *= scalar;
+        self.y *= scalar;
+        self
+    }
+    pub fn scale_to_owned(mut self, scalar: f32) -> Point {
+        self.scale_to_borrowed(scalar);
+        self
+    }
+    pub fn scale(&self, scalar: f32) -> Point {
+        self.clone().scale_to_owned(scalar)
+    }
 }
 
 pub trait Sprite {
@@ -51,19 +80,24 @@ impl Sprite for Cannon {
             Color::BLACK,
         );
     }
-    
+
     fn position(&self) -> &Point {
         &self.position
     }
-    
+
     fn position_mut(&mut self) -> &mut Point {
         &mut self.position
     }
 }
 
+pub trait Entity {
+    fn update(&mut self, delta_time: f32);
+}
+
 pub struct Bullet {
     pub position: Point,
     pub direction: f32,
+    pub velocity: Point,
 }
 
 impl Sprite for Bullet {
@@ -83,19 +117,26 @@ impl Sprite for Bullet {
             Color::BLACK,
         );
     }
-    
+
     fn position(&self) -> &Point {
         &self.position
     }
-    
+
     fn position_mut(&mut self) -> &mut Point {
         &mut self.position
     }
 }
 
+impl Entity for Bullet {
+    fn update(&mut self, delta_time: f32) {
+        self.position
+            .sum_to_borrowed(&self.velocity.scale(delta_time));
+    }
+}
 pub struct Enemy {
     position: Point,
     direction: f32,
+    pub velocity: Point,
 }
 
 impl Sprite for Enemy {
@@ -120,12 +161,18 @@ impl Sprite for Enemy {
             Color::BLACK,
         );
     }
-    
+
     fn position(&self) -> &Point {
         &self.position
     }
-    
+
     fn position_mut(&mut self) -> &mut Point {
         &mut self.position
+    }
+}
+impl Entity for Enemy {
+    fn update(&mut self, delta_time: f32) {
+        self.position
+            .sum_to_borrowed(&self.velocity.scale(delta_time));
     }
 }
