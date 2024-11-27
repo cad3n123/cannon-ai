@@ -4,6 +4,36 @@ macro_rules! lock_with_error {
             .expect(&format!("Failed to lock {} mutex", stringify!($var)))
     };
 }
+macro_rules! regular_button {
+    ($text:expr, $position:expr, $on_click_up:expr) => {
+        Rc::new(RefCell::new(Button::build(
+            $text.to_string(),
+            &$position,
+            Color::BLACK,
+            None,
+            Some(Box::new(|button: &mut Button| {
+                button.font_color = Color {
+                    r: 80,
+                    g: 80,
+                    b: 80,
+                    a: 255,
+                };
+            })),
+            Some(Box::new(|button: &mut Button| {
+                button.font_color = Color {
+                    r: 50,
+                    g: 50,
+                    b: 50,
+                    a: 255,
+                };
+            })),
+            Some(Box::new(|button: &mut Button| {
+                button.font_color = Color::BLACK;
+            })),
+            Some($on_click_up),
+        )))
+    };
+}
 
 mod entity;
 mod multi_threading;
@@ -75,44 +105,19 @@ fn run_display(
 ) {
     let (mut rl, thread) = start_raylib();
     let buttons = {
-        let speed_up_button: Rc<RefCell<Button>> = Rc::new(RefCell::new(Button::build(
-            "Speed Up".to_string(),
-            &Point { x: 0.0, y: 0.0 },
-            Color::BLACK,
-            None,
-            Some(Box::new(|speed_up_button: &mut Button| {
-                speed_up_button.font_color = Color {
-                    r: 80,
-                    g: 80,
-                    b: 80,
-                    a: 255,
-                };
-            })),
-            Some(Box::new(|speed_up_button: &mut Button| {
-                speed_up_button.font_color = Color {
-                    r: 50,
-                    g: 50,
-                    b: 50,
-                    a: 255,
-                };
-            })),
-            Some(Box::new(|speed_up_button: &mut Button| {
-                speed_up_button.font_color = Color::BLACK;
-            })),
-            Some({
-                let is_real_time = Arc::clone(&is_real_time); // Clone Arc for use in the closure
-                Box::new(move |speed_up_button: &mut Button| {
-                    let current_state = is_real_time.load(Ordering::SeqCst);
-                    is_real_time.store(!current_state, Ordering::SeqCst); // Toggle the boolean value
+        let speed_up_button = regular_button!("Speed Up", Point { x: 0.0, y: 0.0 }, {
+            let is_real_time = Arc::clone(&is_real_time);
+            Box::new(move |speed_up_button: &mut Button| {
+                let current_state = is_real_time.load(Ordering::SeqCst);
+                is_real_time.store(!current_state, Ordering::SeqCst);
 
-                    if is_real_time.load(Ordering::SeqCst) {
-                        speed_up_button.text = "Speed Up".to_string();
-                    } else {
-                        speed_up_button.text = "Slow Down".to_string();
-                    }
-                })
-            }),
-        )));
+                if is_real_time.load(Ordering::SeqCst) {
+                    speed_up_button.text = "Speed Up".to_string();
+                } else {
+                    speed_up_button.text = "Slow Down".to_string();
+                }
+            })
+        });
         [speed_up_button]
     };
 
