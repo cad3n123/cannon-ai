@@ -1,6 +1,9 @@
 use std::sync::{atomic::AtomicBool, Arc, Mutex};
 
-use crate::{entity::{Cannon, Point}, TOTAL_AIS};
+use crate::{
+    entity::{Cannon, Point},
+    TOTAL_AIS,
+};
 
 pub struct SharedResources {
     pub is_running: Arc<AtomicBool>,
