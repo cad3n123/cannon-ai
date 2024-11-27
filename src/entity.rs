@@ -9,11 +9,11 @@ use raylib::{
 };
 
 const CANNON_RADIUS: f32 = 50.0;
-const BARREL_LENGTH: f32 = 40.0;
-const BARREL_HEIGHT: f32 = 2.0 * BARREL_LENGTH / 3.0;
+const BARREL_HEIGHT: f32 = 40.0;
+const BARREL_WIDTH: f32 = 2.0 * BARREL_HEIGHT / 3.0;
 const ENEMY_SIZE: usize = 10;
-const ENEMY_WIDTH: f32 = 1.4 * ENEMY_SIZE as f32;
-const ENEMY_HEIGHT: f32 = 2.0 * ENEMY_SIZE as f32;
+const ENEMY_WIDTH: f32 = 7.5 * ENEMY_SIZE as f32;
+const ENEMY_HEIGHT: f32 = 10.0 * ENEMY_SIZE as f32;
 const BULLET_SIZE: usize = 10;
 const BULLET_WIDTH: f32 = 1.5 * BULLET_SIZE as f32;
 const BULLET_HEIGHT: f32 = 2.5 * BULLET_SIZE as f32;
@@ -66,17 +66,33 @@ impl Cannon {
     pub fn new() -> Self {
         Self {
             position: Point { x: 400.0, y: 300.0 },
-            direction: 0.0,
+            direction: 1.0,
         }
     }
 }
 
 impl Sprite for Cannon {
     fn draw(&self, d: &mut RaylibDrawHandle<'_>) {
+        const HALF_BARREL_HEIGHT: f32 = BARREL_HEIGHT / 2.0;
+        const HALF_BARREL_WIDTH: f32 = BARREL_WIDTH / 2.0;
         d.draw_circle(
             self.position.x as i32,
             self.position.y as i32,
             CANNON_RADIUS,
+            Color::BLACK,
+        );
+        d.draw_rectangle_pro(
+            raylib::ffi::Rectangle {
+                x: self.position.x + self.direction.cos() * (CANNON_RADIUS + HALF_BARREL_HEIGHT - 5.0),
+                y: self.position.y + self.direction.sin() * (CANNON_RADIUS + HALF_BARREL_HEIGHT - 5.0),
+                width: BARREL_HEIGHT,
+                height: BARREL_WIDTH,
+            },
+            Vector2 {
+                x: HALF_BARREL_HEIGHT,
+                y: HALF_BARREL_WIDTH,
+            },
+            self.direction * 180.0 / PI,
             Color::BLACK,
         );
     }
@@ -134,8 +150,8 @@ impl Entity for Bullet {
     }
 }
 pub struct Enemy {
-    position: Point,
-    direction: f32,
+    pub position: Point,
+    pub direction: f32,
     pub velocity: Point,
 }
 
@@ -151,12 +167,12 @@ impl Sprite for Enemy {
                 y: self.position.y + direction_sin * HALF_ENEMY_HEIGHT,
             },
             Vector2 {
-                x: self.position.x + direction_cos * (-HALF_ENEMY_HEIGHT - HALF_ENEMY_WIDTH),
-                y: self.position.y + direction_sin * (-HALF_ENEMY_HEIGHT - HALF_ENEMY_WIDTH),
+                x: self.position.x - direction_cos * HALF_ENEMY_HEIGHT + direction_sin * HALF_ENEMY_WIDTH,
+                y: self.position.y - direction_cos * HALF_ENEMY_WIDTH - direction_sin * HALF_ENEMY_HEIGHT,
             },
             Vector2 {
-                x: self.position.x + direction_cos * (-HALF_ENEMY_HEIGHT - HALF_ENEMY_WIDTH),
-                y: self.position.y + direction_sin * (-HALF_ENEMY_HEIGHT + HALF_ENEMY_WIDTH),
+                x: self.position.x - direction_cos * HALF_ENEMY_HEIGHT - direction_sin * HALF_ENEMY_WIDTH,
+                y: self.position.y + direction_cos * HALF_ENEMY_WIDTH - direction_sin * HALF_ENEMY_HEIGHT,
             },
             Color::BLACK,
         );
