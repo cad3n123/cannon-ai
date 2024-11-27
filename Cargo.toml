@@ -6,3 +6,6 @@ edition = "2021"
 [dependencies]
 rand = "0.8.5"
 raylib = { git = "https://github.com/raylib-rs/raylib-rs.git" }
+
+[profile.release]
+lto = true
