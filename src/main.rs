@@ -11,9 +11,11 @@ mod ui;
 
 use entity::{Bullet, Cannon, Enemy, Entity, Point, Sprite};
 use multi_threading::SharedResources;
+use rand::Rng;
 use raylib::{color::Color, prelude::RaylibDraw, RaylibHandle};
 use std::{
     cell::RefCell,
+    f32::consts::PI,
     rc::Rc,
     sync::{
         atomic::{AtomicBool, Ordering},
@@ -24,7 +26,18 @@ use std::{
 };
 use ui::Button;
 
+const TWO_PI: f32 = 2.0 * PI;
+const VIEW_RAY_LENGTH: usize = 400;
+const GUN_ROTATE_VELOCITY: f32 = 0.75;
+const BULLET_SPEED: f32 = 100.0;
+const BULLET_COOLDOWN: f32 = 2.0;
+const ENEMY_COOLDOWN: f32 = 5.0;
+const ENEMY_SPEED: f32 = 25.0;
+const ENEMY_SPAWN_DISTANCE: usize = 1;
 pub const TOTAL_AIS: usize = 10;
+const SIMULATION_DELTA_TIME: f32 = 0.5;
+const TRAINING_TIME: f32 = 40.0;
+const MAX_TWEAK_CHANGE: f32 = 0.05;
 
 fn main() {
     let shared_resources = SharedResources::new();
@@ -150,15 +163,15 @@ fn draw_entities(
         cannons[*selected_ai].draw(&mut d);
     }
     {
-        let enemies = &lock_with_error!(enemies)[*selected_ai];
-        for enemy in enemies {
-            enemy.draw(&mut d);
-        }
-    }
-    {
         let bullets = &lock_with_error!(bullets)[*selected_ai];
         for bullet in bullets {
             bullet.draw(&mut d);
+        }
+    }
+    {
+        let enemies = &lock_with_error!(enemies)[*selected_ai];
+        for enemy in enemies {
+            enemy.draw(&mut d);
         }
     }
 }
@@ -169,13 +182,16 @@ fn update_dimensions(
     cannons: &Arc<Mutex<[Cannon; TOTAL_AIS]>>,
 ) {
     let mut dims = lock_with_error!(dimensions);
-    dims.x = rl.get_render_width() as f32;
-    dims.y = rl.get_render_height() as f32;
+    let width = rl.get_render_width() as f32;
+    let height = rl.get_render_height() as f32;
+    dims.x = width;
+    dims.y = height;
+    drop(dims);
 
     let selected_ai = lock_with_error!(selected_ai);
     let mut cannons = lock_with_error!(cannons);
-    cannons[*selected_ai].position.x = dims.x / 2.0;
-    cannons[*selected_ai].position.y = dims.y / 2.0;
+    cannons[*selected_ai].position.x = width / 2.0;
+    cannons[*selected_ai].position.y = height / 2.0;
 }
 
 fn run_simulation(
@@ -189,9 +205,12 @@ fn run_simulation(
         let mut ai_threads: Vec<JoinHandle<()>> = vec![];
         for ai_index in 0..TOTAL_AIS {
             let is_running_clone = Arc::clone(&is_running);
+            let dimensions_clone = Arc::clone(&dimensions);
             let cannons_clone = Arc::clone(&cannons);
             let enemies_clone = Arc::clone(&enemies);
             let bullets_clone = Arc::clone(&bullets);
+            let mut time_since_enemy: f32 = ENEMY_COOLDOWN - 2.0;
+            let mut time_since_bullet = 0.0_f32;
 
             ai_threads.push(thread::spawn(move || {
                 let mut last_time = Instant::now();
@@ -201,7 +220,25 @@ fn run_simulation(
                     let delta_time = now.duration_since(last_time).as_secs_f32();
                     last_time = now;
 
-                    update_entites(&cannons_clone, ai_index, delta_time, &enemies_clone, &bullets_clone);
+                    time_since_enemy += delta_time;
+                    time_since_bullet += delta_time;
+
+                    if time_since_enemy >= ENEMY_COOLDOWN {
+                        time_since_enemy = 0.0;
+                        spawn_rand_enemy(&enemies_clone, ai_index, &dimensions_clone);
+                    }
+                    if time_since_bullet >= BULLET_COOLDOWN {
+                        time_since_bullet = 0.0;
+                        spawn_bullet(&cannons_clone, ai_index, &bullets_clone, &dimensions_clone);
+                    }
+
+                    update_entites(
+                        &cannons_clone,
+                        ai_index,
+                        delta_time,
+                        &enemies_clone,
+                        &bullets_clone,
+                    );
                 }
             }));
         }
@@ -212,7 +249,67 @@ fn run_simulation(
     })
 }
 
-fn update_entites(cannons_clone: &Arc<Mutex<[Cannon; 10]>>, ai_index: usize, delta_time: f32, enemies_clone: &Arc<Mutex<[Vec<Enemy>; 10]>>, bullets_clone: &Arc<Mutex<[Vec<Bullet>; 10]>>) {
+fn spawn_bullet(
+    cannons_clone: &Arc<Mutex<[Cannon; 10]>>,
+    ai_index: usize,
+    bullets_clone: &Arc<Mutex<[Vec<Bullet>; 10]>>,
+    dimensions_clone: &Arc<Mutex<Point>>,
+) {
+    let cannons = lock_with_error!(cannons_clone);
+    let direction = cannons[ai_index].direction;
+    drop(cannons);
+    let (center_x, center_y) = get_center(dimensions_clone);
+    let bullets = &mut lock_with_error!(bullets_clone)[ai_index];
+    bullets.push(Bullet {
+        position: Point {
+            x: center_x,
+            y: center_y,
+        },
+        direction,
+        velocity: Point {
+            x: direction.cos() * BULLET_SPEED,
+            y: direction.sin() * BULLET_SPEED,
+        },
+    });
+}
+
+fn spawn_rand_enemy(
+    enemies_clone: &Arc<Mutex<[Vec<Enemy>; 10]>>,
+    ai_index: usize,
+    dimensions_clone: &Arc<Mutex<Point>>,
+) {
+    let (center_x, center_y) = get_center(dimensions_clone);
+    let location_direction = rand::thread_rng().gen_range(0.0..TWO_PI);
+    let facing_direction = PI + location_direction;
+    let enemies = &mut lock_with_error!(enemies_clone)[ai_index];
+    enemies.push(Enemy {
+        position: Point {
+            x: center_x
+                + location_direction.cos() * (VIEW_RAY_LENGTH + ENEMY_SPAWN_DISTANCE) as f32,
+            y: center_y
+                + location_direction.sin() * (VIEW_RAY_LENGTH + ENEMY_SPAWN_DISTANCE) as f32,
+        },
+        direction: facing_direction,
+        velocity: Point {
+            x: ENEMY_SPEED * facing_direction.cos(),
+            y: ENEMY_SPEED * facing_direction.sin(),
+        },
+    });
+}
+
+fn get_center(dimensions_clone: &Arc<Mutex<Point>>) -> (f32, f32) {
+    let dimensions = lock_with_error!(dimensions_clone);
+    let (center_x, center_y) = (dimensions.x / 2.0, dimensions.y / 2.0);
+    (center_x, center_y)
+}
+
+fn update_entites(
+    cannons_clone: &Arc<Mutex<[Cannon; 10]>>,
+    ai_index: usize,
+    delta_time: f32,
+    enemies_clone: &Arc<Mutex<[Vec<Enemy>; 10]>>,
+    bullets_clone: &Arc<Mutex<[Vec<Bullet>; 10]>>,
+) {
     {
         let mut cannons = lock_with_error!(cannons_clone);
         cannons[ai_index].direction += (ai_index + 1) as f32 * delta_time;

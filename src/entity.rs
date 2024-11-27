@@ -83,8 +83,10 @@ impl Sprite for Cannon {
         );
         d.draw_rectangle_pro(
             raylib::ffi::Rectangle {
-                x: self.position.x + self.direction.cos() * (CANNON_RADIUS + HALF_BARREL_HEIGHT - 5.0),
-                y: self.position.y + self.direction.sin() * (CANNON_RADIUS + HALF_BARREL_HEIGHT - 5.0),
+                x: self.position.x
+                    + self.direction.cos() * (CANNON_RADIUS + HALF_BARREL_HEIGHT - 5.0),
+                y: self.position.y
+                    + self.direction.sin() * (CANNON_RADIUS + HALF_BARREL_HEIGHT - 5.0),
                 width: BARREL_HEIGHT,
                 height: BARREL_WIDTH,
             },
@@ -167,12 +169,18 @@ impl Sprite for Enemy {
                 y: self.position.y + direction_sin * HALF_ENEMY_HEIGHT,
             },
             Vector2 {
-                x: self.position.x - direction_cos * HALF_ENEMY_HEIGHT + direction_sin * HALF_ENEMY_WIDTH,
-                y: self.position.y - direction_cos * HALF_ENEMY_WIDTH - direction_sin * HALF_ENEMY_HEIGHT,
+                x: self.position.x - direction_cos * HALF_ENEMY_HEIGHT
+                    + direction_sin * HALF_ENEMY_WIDTH,
+                y: self.position.y
+                    - direction_cos * HALF_ENEMY_WIDTH
+                    - direction_sin * HALF_ENEMY_HEIGHT,
             },
             Vector2 {
-                x: self.position.x - direction_cos * HALF_ENEMY_HEIGHT - direction_sin * HALF_ENEMY_WIDTH,
-                y: self.position.y + direction_cos * HALF_ENEMY_WIDTH - direction_sin * HALF_ENEMY_HEIGHT,
+                x: self.position.x
+                    - direction_cos * HALF_ENEMY_HEIGHT
+                    - direction_sin * HALF_ENEMY_WIDTH,
+                y: self.position.y + direction_cos * HALF_ENEMY_WIDTH
+                    - direction_sin * HALF_ENEMY_HEIGHT,
             },
             Color::BLACK,
         );
