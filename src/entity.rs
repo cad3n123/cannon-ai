@@ -16,12 +16,15 @@ const BULLET_SIZE: usize = 10;
 const BULLET_WIDTH: f32 = 1.5 * BULLET_SIZE as f32;
 const BULLET_HEIGHT: f32 = 2.5 * BULLET_SIZE as f32;
 
+#[derive(Clone)]
 pub struct Point {
     pub x: f32,
     pub y: f32,
 }
 
 pub trait Sprite {
+    fn position(&self) -> &Point;
+    fn position_mut(&mut self) -> &mut Point;
     fn draw(&self, d: &mut RaylibDrawHandle<'_>);
 }
 
@@ -34,7 +37,7 @@ impl Cannon {
     pub fn new() -> Self {
         Self {
             position: Point { x: 400.0, y: 300.0 },
-            direction: 0,
+            direction: 0.0,
         }
     }
 }
@@ -47,6 +50,14 @@ impl Sprite for Cannon {
             CANNON_RADIUS,
             Color::BLACK,
         );
+    }
+    
+    fn position(&self) -> &Point {
+        &self.position
+    }
+    
+    fn position_mut(&mut self) -> &mut Point {
+        &mut self.position
     }
 }
 
@@ -71,6 +82,14 @@ impl Sprite for Bullet {
             self.direction * 180.0 / PI,
             Color::BLACK,
         );
+    }
+    
+    fn position(&self) -> &Point {
+        &self.position
+    }
+    
+    fn position_mut(&mut self) -> &mut Point {
+        &mut self.position
     }
 }
 
@@ -100,5 +119,13 @@ impl Sprite for Enemy {
             },
             Color::BLACK,
         );
+    }
+    
+    fn position(&self) -> &Point {
+        &self.position
+    }
+    
+    fn position_mut(&mut self) -> &mut Point {
+        &mut self.position
     }
 }
