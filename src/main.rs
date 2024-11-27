@@ -1,6 +1,7 @@
 macro_rules! lock_with_error {
     ($var:ident) => {
-        $var.lock().expect(&format!("Failed to lock {} mutex", stringify!($var)))
+        $var.lock()
+            .expect(&format!("Failed to lock {} mutex", stringify!($var)))
     };
 }
 
@@ -8,16 +9,20 @@ mod entity;
 mod multi_threading;
 mod ui;
 
-use entity::{Bullet, Cannon, Enemy, Point, Sprite};
+use entity::{Bullet, Cannon, Enemy, Entity, Point, Sprite};
 use multi_threading::SharedResources;
 use raylib::{color::Color, prelude::RaylibDraw, RaylibHandle};
-use ui::Button;
 use std::{
-    cell::RefCell, rc::Rc, sync::{
+    cell::RefCell,
+    rc::Rc,
+    sync::{
         atomic::{AtomicBool, Ordering},
         Arc, Mutex,
-    }, thread::{self, JoinHandle}, time::Instant
+    },
+    thread::{self, JoinHandle},
+    time::Instant,
 };
+use ui::Button;
 
 pub const TOTAL_AIS: usize = 10;
 
@@ -27,8 +32,9 @@ fn main() {
     let simulation = run_simulation(
         shared_resources.is_running.clone(),
         shared_resources.dimensions.clone(),
-        shared_resources.selected_ai.clone(),
         shared_resources.cannons.clone(),
+        shared_resources.enemies.clone(),
+        shared_resources.bullets.clone(),
     );
 
     run_display(
@@ -129,9 +135,15 @@ fn update_display(
     d.clear_background(Color::RAYWHITE);
 
     draw_entities(selected_ai, cannons, d, enemies, bullets);
-    }
-    
-    fn draw_entities(selected_ai: &Arc<Mutex<usize>>, cannons: &Arc<Mutex<[Cannon; 10]>>, mut d: raylib::prelude::RaylibDrawHandle<'_>, enemies: &Arc<Mutex<[Vec<Enemy>; 10]>>, bullets: &Arc<Mutex<[Vec<Bullet>; 10]>>) {
+}
+
+fn draw_entities(
+    selected_ai: &Arc<Mutex<usize>>,
+    cannons: &Arc<Mutex<[Cannon; 10]>>,
+    mut d: raylib::prelude::RaylibDrawHandle<'_>,
+    enemies: &Arc<Mutex<[Vec<Enemy>; 10]>>,
+    bullets: &Arc<Mutex<[Vec<Bullet>; 10]>>,
+) {
     let selected_ai = lock_with_error!(selected_ai);
     {
         let cannons = lock_with_error!(cannons);
@@ -149,7 +161,7 @@ fn update_display(
             bullet.draw(&mut d);
         }
     }
-    }
+}
 fn update_dimensions(
     rl: &RaylibHandle,
     dimensions: &Arc<Mutex<Point>>,
@@ -169,14 +181,17 @@ fn update_dimensions(
 fn run_simulation(
     is_running: Arc<AtomicBool>,
     dimensions: Arc<Mutex<Point>>,
-    selected_ai: Arc<Mutex<usize>>,
     cannons: Arc<Mutex<[Cannon; TOTAL_AIS]>>,
+    enemies: Arc<Mutex<[Vec<Enemy>; TOTAL_AIS]>>,
+    bullets: Arc<Mutex<[Vec<Bullet>; TOTAL_AIS]>>,
 ) -> JoinHandle<()> {
     thread::spawn(move || {
         let mut ai_threads: Vec<JoinHandle<()>> = vec![];
         for ai_index in 0..TOTAL_AIS {
             let is_running_clone = Arc::clone(&is_running);
             let cannons_clone = Arc::clone(&cannons);
+            let enemies_clone = Arc::clone(&enemies);
+            let bullets_clone = Arc::clone(&bullets);
 
             ai_threads.push(thread::spawn(move || {
                 let mut last_time = Instant::now();
@@ -186,10 +201,7 @@ fn run_simulation(
                     let delta_time = now.duration_since(last_time).as_secs_f32();
                     last_time = now;
 
-                    {
-                        let mut cannon = cannons_clone.lock().expect("Failed to lock cannon mutex");
-                        cannon[ai_index].direction += 1.0 * delta_time;
-                    }
+                    update_entites(&cannons_clone, ai_index, delta_time, &enemies_clone, &bullets_clone);
                 }
             }));
         }
@@ -198,4 +210,23 @@ fn run_simulation(
             handle.join().expect("AI thread panicked");
         }
     })
+}
+
+fn update_entites(cannons_clone: &Arc<Mutex<[Cannon; 10]>>, ai_index: usize, delta_time: f32, enemies_clone: &Arc<Mutex<[Vec<Enemy>; 10]>>, bullets_clone: &Arc<Mutex<[Vec<Bullet>; 10]>>) {
+    {
+        let mut cannons = lock_with_error!(cannons_clone);
+        cannons[ai_index].direction += (ai_index + 1) as f32 * delta_time;
+    }
+    {
+        let enemies = &mut lock_with_error!(enemies_clone)[ai_index];
+        for enemy in enemies {
+            enemy.update(delta_time);
+        }
+    }
+    {
+        let bullets = &mut lock_with_error!(bullets_clone)[ai_index];
+        for bullet in bullets {
+            bullet.update(delta_time);
+        }
+    }
 }
