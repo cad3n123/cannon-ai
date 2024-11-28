@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+na = { version = "0.33.2", package = "nalgebra", features = ["serde", "rand"] }
 rand = "0.8.5"
 raylib = { git = "https://github.com/raylib-rs/raylib-rs.git" }
 

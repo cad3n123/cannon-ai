@@ -37,6 +37,7 @@ macro_rules! regular_button {
 
 mod entity;
 mod multi_threading;
+mod neural_network;
 mod ui;
 
 use entity::{Bullet, Cannon, Enemy, Entity, Point, Sprite};
