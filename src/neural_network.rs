@@ -1,6 +1,8 @@
 #![allow(dead_code)]
 
 use na::{self, DMatrix, DVector};
+use rand::Rng;
+use typed_floats::Positive;
 
 pub struct NeuralNetwork {
     input_size: usize,
@@ -44,8 +46,45 @@ impl NeuralNetwork {
     }
     pub fn run(&self, input: &DVector<f32>) -> Result<DVector<f32>, String> {
         if input.nrows() != self.input_size {
-            return Err(format!("Incorrect input size for neural network. Expected {}", self.input_size));
+            return Err(format!(
+                "Incorrect input size for neural network. Expected {}",
+                self.input_size
+            ));
         }
         Ok(self.run_unchecked(input))
+    }
+    pub fn tweak_continuous(&mut self, change: Positive<f32>) {
+        let mut rng = rand::thread_rng();
+        let change_float: f32 = change.into();
+
+        for weight in self.weights.iter_mut() {
+            weight.apply(|element| {
+                *element += rng.gen_range(-change_float..change_float) as f32;
+                *element = element.clamp(0.0, 1.0);
+            });
+        }
+        for bias in self.biases.iter_mut() {
+            bias.apply(|element| {
+                *element += rng.gen_range(-change_float..change_float) as f32;
+                *element = element.clamp(0.0, 1.0);
+            });
+        }
+    }
+    pub fn tweak_discrete(&mut self, change: u32) {
+        let mut rng = rand::thread_rng();
+        let change_int = change as i32;
+
+        for weight in self.weights.iter_mut() {
+            weight.apply(|element| {
+                *element += rng.gen_range(-change_int..change_int) as f32;
+                *element = element.clamp(0.0, 1.0);
+            });
+        }
+        for bias in self.biases.iter_mut() {
+            bias.apply(|element| {
+                *element += rng.gen_range(-change_int..change_int) as f32;
+                *element = element.clamp(0.0, 1.0);
+            });
+        }
     }
 }
