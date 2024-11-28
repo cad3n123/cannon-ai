@@ -81,6 +81,7 @@ fn run_cannon_ai() {
 
     let simulation = run_simulation(
         shared_resources.is_running.clone(),
+        shared_resources.is_real_time.clone(),
         shared_resources.dimensions.clone(),
         shared_resources.cannons.clone(),
         shared_resources.enemies.clone(),
@@ -111,34 +112,102 @@ fn run_display(
     bullets: Arc<Mutex<[Vec<Bullet>; TOTAL_AIS]>>,
 ) {
     let (mut rl, thread) = start_raylib();
-    let buttons = {
-        let speed_up_button = regular_button!("Speed Up", Point { x: 0.0, y: 0.0 }, {
-            let is_real_time = Arc::clone(&is_real_time);
-            Box::new(move |speed_up_button: &mut Button| {
-                let current_state = is_real_time.load(Ordering::SeqCst);
-                is_real_time.store(!current_state, Ordering::SeqCst);
-
-                if is_real_time.load(Ordering::SeqCst) {
-                    speed_up_button.text = "Speed Up".to_string();
-                } else {
-                    speed_up_button.text = "Slow Down".to_string();
-                }
-            })
-        });
-        [speed_up_button]
-    };
+    let mut buttons = create_buttons(&is_real_time, &selected_ai);
 
     while !rl.window_should_close() {
         if rl.is_window_resized() {
-            update_dimensions(&rl, &dimensions, &selected_ai, &cannons);
+            update_dimensions(&rl, &dimensions, &cannons);
         }
 
-        let d = rl.begin_drawing(&thread);
-        update_display(d, &selected_ai, &cannons, &enemies, &bullets);
+        let mut d = rl.begin_drawing(&thread);
+        update_display(
+            &mut d,
+            &selected_ai,
+            &mut buttons,
+            &cannons,
+            &enemies,
+            &bullets,
+        );
+        for button in buttons.iter_mut() {
+            button.borrow_mut().update(&d);
+        }
     }
 
     drop(rl);
     is_running.store(false, Ordering::SeqCst);
+}
+
+fn create_buttons(
+    is_real_time: &Arc<AtomicBool>,
+    selected_ai_clone: &Arc<Mutex<usize>>,
+) -> Box<[Rc<RefCell<Button>>]> {
+    let selected_ai = {
+        let lock = lock_with_error!(selected_ai_clone);
+        *lock
+    };
+    let mut decrement_selected_ai_button: Option<Rc<RefCell<Button>>> = None;
+    let mut increment_selected_ai_button: Option<Rc<RefCell<Button>>> = None;
+    decrement_selected_ai_button = Some(regular_button!(
+        if selected_ai == 0 { " " } else { "<" },
+        Point { x: 5.0, y: 5.0 },
+        {
+            let selected_ai_clone = Arc::clone(selected_ai_clone);
+            let increment_selected_ai_button = increment_selected_ai_button.clone();
+            Box::new(move |self_: &mut Button| {
+                let mut selected_ai = lock_with_error!(selected_ai_clone);
+                if *selected_ai > 0 {
+                    *selected_ai -= 1;
+                }
+                if *selected_ai == 0 {
+                    self_.text = " ".to_string();
+                }
+                if let Some(ref button) = increment_selected_ai_button {
+                    button.borrow_mut().text = ">".to_string();
+                }
+            })
+        }
+    ));
+    increment_selected_ai_button = Some(regular_button!(
+        if selected_ai == TOTAL_AIS - 1 {
+            " "
+        } else {
+            ">"
+        },
+        Point { x: 25.0, y: 5.0 },
+        {
+            let selected_ai_clone = Arc::clone(selected_ai_clone);
+            let decrement_selected_ai_button = decrement_selected_ai_button.clone();
+            Box::new(move |self_: &mut Button| {
+                let mut selected_ai = lock_with_error!(selected_ai_clone);
+                *selected_ai += 1;
+                if *selected_ai >= TOTAL_AIS - 1 {
+                    *selected_ai = TOTAL_AIS - 1;
+                    self_.text = " ".to_string();
+                }
+                if let Some(ref button) = decrement_selected_ai_button {
+                    button.borrow_mut().text = "<".to_string();
+                }
+            })
+        }
+    ));
+    vec![
+        decrement_selected_ai_button.unwrap(),
+        increment_selected_ai_button.unwrap(),
+        regular_button!("Speed Up", Point { x: 5.0, y: 30.0 }, {
+            let is_real_time = Arc::clone(is_real_time);
+            Box::new(move |self_: &mut Button| {
+                let current_state = is_real_time.load(Ordering::SeqCst);
+                is_real_time.store(!current_state, Ordering::SeqCst);
+
+                if is_real_time.load(Ordering::SeqCst) {
+                    self_.text = "Speed Up".to_string();
+                } else {
+                    self_.text = "Slow Down".to_string();
+                }
+            })
+        }),
+    ]
+    .into_boxed_slice()
 }
 fn start_raylib() -> (RaylibHandle, raylib::RaylibThread) {
     let (mut rl, thread) = raylib::init()
@@ -151,46 +220,56 @@ fn start_raylib() -> (RaylibHandle, raylib::RaylibThread) {
     (rl, thread)
 }
 fn update_display(
-    mut d: raylib::prelude::RaylibDrawHandle<'_>,
+    d: &mut raylib::prelude::RaylibDrawHandle<'_>,
     selected_ai: &Arc<Mutex<usize>>,
+    buttons: &mut Box<[Rc<RefCell<Button>>]>,
     cannons: &Arc<Mutex<[Cannon; TOTAL_AIS]>>,
     enemies: &Arc<Mutex<[Vec<Enemy>; TOTAL_AIS]>>,
     bullets: &Arc<Mutex<[Vec<Bullet>; TOTAL_AIS]>>,
 ) {
     d.clear_background(Color::RAYWHITE);
 
+    draw_buttons(buttons, d);
     draw_entities(selected_ai, cannons, d, enemies, bullets);
+}
+
+fn draw_buttons(
+    buttons: &mut Box<[Rc<RefCell<Button>>]>,
+    d: &mut raylib::prelude::RaylibDrawHandle<'_>,
+) {
+    for button in buttons.iter_mut() {
+        button.borrow_mut().draw(d);
+    }
 }
 
 fn draw_entities(
     selected_ai: &Arc<Mutex<usize>>,
     cannons: &Arc<Mutex<[Cannon; 10]>>,
-    mut d: raylib::prelude::RaylibDrawHandle<'_>,
+    d: &mut raylib::prelude::RaylibDrawHandle<'_>,
     enemies: &Arc<Mutex<[Vec<Enemy>; 10]>>,
     bullets: &Arc<Mutex<[Vec<Bullet>; 10]>>,
 ) {
     let selected_ai = lock_with_error!(selected_ai);
     {
         let cannons = lock_with_error!(cannons);
-        cannons[*selected_ai].draw(&mut d);
+        cannons[*selected_ai].draw(d);
     }
     {
         let bullets = &lock_with_error!(bullets)[*selected_ai];
         for bullet in bullets {
-            bullet.draw(&mut d);
+            bullet.draw(d);
         }
     }
     {
         let enemies = &lock_with_error!(enemies)[*selected_ai];
         for enemy in enemies {
-            enemy.draw(&mut d);
+            enemy.draw(d);
         }
     }
 }
 fn update_dimensions(
     rl: &RaylibHandle,
     dimensions: &Arc<Mutex<Point>>,
-    selected_ai: &Arc<Mutex<usize>>,
     cannons: &Arc<Mutex<[Cannon; TOTAL_AIS]>>,
 ) {
     let mut dims = lock_with_error!(dimensions);
@@ -200,14 +279,16 @@ fn update_dimensions(
     dims.y = height;
     drop(dims);
 
-    let selected_ai = lock_with_error!(selected_ai);
     let mut cannons = lock_with_error!(cannons);
-    cannons[*selected_ai].position.x = width / 2.0;
-    cannons[*selected_ai].position.y = height / 2.0;
+    for cannon in cannons.iter_mut() {
+        cannon.position.x = width / 2.0;
+        cannon.position.y = height / 2.0;
+    }
 }
 
 fn run_simulation(
     is_running: Arc<AtomicBool>,
+    is_real_time: Arc<AtomicBool>,
     dimensions: Arc<Mutex<Point>>,
     cannons: Arc<Mutex<[Cannon; TOTAL_AIS]>>,
     enemies: Arc<Mutex<[Vec<Enemy>; TOTAL_AIS]>>,
@@ -217,6 +298,7 @@ fn run_simulation(
         let mut ai_threads: Vec<JoinHandle<()>> = vec![];
         for ai_index in 0..TOTAL_AIS {
             let is_running_clone = Arc::clone(&is_running);
+            let is_real_time_clone = Arc::clone(&is_real_time);
             let dimensions_clone = Arc::clone(&dimensions);
             let cannons_clone = Arc::clone(&cannons);
             let enemies_clone = Arc::clone(&enemies);
@@ -229,7 +311,11 @@ fn run_simulation(
 
                 while is_running_clone.load(Ordering::SeqCst) {
                     let now = Instant::now();
-                    let delta_time = now.duration_since(last_time).as_secs_f32();
+                    let delta_time = if is_real_time_clone.load(Ordering::SeqCst) {
+                        now.duration_since(last_time).as_secs_f32()
+                    } else {
+                        0.001
+                    };
                     last_time = now;
 
                     time_since_enemy += delta_time;
