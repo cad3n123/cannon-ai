@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use na::{self, DMatrix, DVector};
 
 pub struct NeuralNetwork {
