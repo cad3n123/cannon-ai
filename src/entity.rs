@@ -8,8 +8,8 @@ use raylib::{
     prelude::{RaylibDraw, RaylibDrawHandle},
 };
 
-const CANNON_RADIUS: f32 = 50.0;
-const BARREL_HEIGHT: f32 = 40.0;
+pub const CANNON_RADIUS: f32 = 50.0;
+pub const BARREL_HEIGHT: f32 = 40.0;
 const BARREL_WIDTH: f32 = 2.0 * BARREL_HEIGHT / 3.0;
 const ENEMY_SIZE: usize = 10;
 const ENEMY_WIDTH: f32 = 7.5 * ENEMY_SIZE as f32;

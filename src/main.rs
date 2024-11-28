@@ -40,8 +40,10 @@ mod multi_threading;
 mod neural_network;
 mod ui;
 
-use entity::{Bullet, Cannon, Enemy, Entity, Point, Sprite};
+use entity::{Bullet, Cannon, Enemy, Entity, Point, Sprite, BARREL_HEIGHT, CANNON_RADIUS};
 use multi_threading::SharedResources;
+use na::DVector;
+use neural_network::NeuralNetwork;
 use rand::Rng;
 use raylib::{color::Color, prelude::RaylibDraw, RaylibHandle};
 use std::{
@@ -55,6 +57,7 @@ use std::{
     thread::{self, JoinHandle},
     time::Instant,
 };
+use typed_floats::Positive;
 use ui::Button;
 
 const TWO_PI: f32 = 2.0 * PI;
@@ -71,6 +74,9 @@ const TRAINING_TIME: f32 = 40.0;
 const MAX_TWEAK_CHANGE: f32 = 0.05;
 
 fn main() {
+    run_cannon_ai();
+}
+fn run_cannon_ai() {
     let shared_resources = SharedResources::new();
 
     let simulation = run_simulation(
@@ -261,20 +267,19 @@ fn spawn_bullet(
     bullets_clone: &Arc<Mutex<[Vec<Bullet>; 10]>>,
     dimensions_clone: &Arc<Mutex<Point>>,
 ) {
-    let cannons = lock_with_error!(cannons_clone);
-    let direction = cannons[ai_index].direction;
-    drop(cannons);
+    let direction = lock_with_error!(cannons_clone)[ai_index].direction;
+    let (direction_cos, direction_sin) = (direction.cos(), direction.sin());
     let (center_x, center_y) = get_center(dimensions_clone);
     let bullets = &mut lock_with_error!(bullets_clone)[ai_index];
     bullets.push(Bullet {
         position: Point {
-            x: center_x,
-            y: center_y,
+            x: center_x + direction_cos * (CANNON_RADIUS + BARREL_HEIGHT),
+            y: center_y + direction_sin * (CANNON_RADIUS + BARREL_HEIGHT),
         },
         direction,
         velocity: Point {
-            x: direction.cos() * BULLET_SPEED,
-            y: direction.sin() * BULLET_SPEED,
+            x: direction_cos * BULLET_SPEED,
+            y: direction_sin * BULLET_SPEED,
         },
     });
 }
@@ -332,4 +337,27 @@ fn update_entites(
             bullet.update(delta_time);
         }
     }
+}
+fn find_largest_index_unchecked(values: &[f32]) -> usize {
+    values
+        .iter()
+        .enumerate()
+        .max_by(|a, b| a.1.partial_cmp(b.1).unwrap_or(std::cmp::Ordering::Equal))
+        .map(|(index, _)| index)
+        .unwrap()
+}
+fn find_n_lowest_indices(values: &[f32], n: usize) -> Box<[usize]> {
+    // Create a vector of indices paired with their corresponding values.
+    let mut indexed_values: Vec<(usize, f32)> = values.iter().cloned().enumerate().collect();
+
+    // Sort the vector by the values (second element of the tuple).
+    indexed_values.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
+
+    // Extract the indices of the n lowest values.
+    indexed_values
+        .iter()
+        .take(n)
+        .map(|&(index, _)| index)
+        .collect::<Vec<usize>>()
+        .into_boxed_slice()
 }
