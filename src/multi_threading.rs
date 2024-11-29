@@ -16,10 +16,16 @@ macro_rules! new_dynamic_array {
     };
 }
 
-use std::{io, num::NonZero, sync::{atomic::AtomicBool, Arc, Mutex}, thread::available_parallelism};
+use std::{
+    io,
+    num::NonZero,
+    sync::{atomic::AtomicBool, Arc, Mutex},
+    thread::available_parallelism,
+};
 
 use crate::entity::{Bullet, Cannon, Enemy, Point};
 
+#[derive(Clone)]
 pub struct SharedResources {
     pub total_ais: Arc<NonZero<usize>>,
     pub is_running: Arc<AtomicBool>,
@@ -53,5 +59,17 @@ impl SharedResources {
             bullets: new_arc_mutex!(new_dynamic_array!(total_ais.into(), vec![], Vec<Bullet>)),
             enemies: new_arc_mutex!(new_dynamic_array!(total_ais.into(), vec![], Vec<Enemy>)),
         })
+    }
+    pub fn arc_clone(&self) -> Self {
+        Self {
+            total_ais: Arc::clone(&self.total_ais),
+            is_running: Arc::clone(&self.is_running),
+            is_real_time: Arc::clone(&self.is_real_time),
+            dimensions: Arc::clone(&self.dimensions),
+            selected_ai: Arc::clone(&self.selected_ai),
+            cannons: Arc::clone(&self.cannons),
+            bullets: Arc::clone(&self.bullets),
+            enemies: Arc::clone(&self.enemies),
+        }
     }
 }

@@ -47,10 +47,18 @@ use neural_network::NeuralNetwork;
 use rand::Rng;
 use raylib::{color::Color, prelude::RaylibDraw, RaylibHandle};
 use std::{
-    borrow::Borrow, cell::RefCell, f32::consts::PI, io, num::NonZero, rc::Rc, sync::{
+    borrow::Borrow,
+    cell::RefCell,
+    f32::consts::PI,
+    io,
+    num::NonZero,
+    rc::Rc,
+    sync::{
         atomic::{AtomicBool, Ordering},
         Arc, Mutex,
-    }, thread::{self, available_parallelism, JoinHandle}, time::Instant
+    },
+    thread::{self, available_parallelism, JoinHandle},
+    time::Instant,
 };
 use typed_floats::Positive;
 use ui::Button;
@@ -74,58 +82,36 @@ fn main() {
 fn run_cannon_ai() -> Result<(), io::Error> {
     let shared_resources = SharedResources::new()?;
 
-    let simulation = run_simulation(
-        shared_resources.total_ais.clone(),
-        shared_resources.is_running.clone(),
-        shared_resources.is_real_time.clone(),
-        shared_resources.dimensions.clone(),
-        shared_resources.cannons.clone(),
-        shared_resources.enemies.clone(),
-        shared_resources.bullets.clone(),
-    );
+    let simulation = run_simulation(shared_resources.clone());
 
-    run_display(
-        shared_resources.total_ais.clone(),
-        shared_resources.is_running.clone(),
-        shared_resources.is_real_time.clone(),
-        shared_resources.dimensions.clone(),
-        shared_resources.selected_ai.clone(),
-        shared_resources.cannons.clone(),
-        shared_resources.enemies.clone(),
-        shared_resources.bullets.clone(),
-    );
+    run_display(shared_resources.clone());
 
     simulation.join().expect("Simulation panicked");
 
     println!("Program exiting gracefully");
     Ok(())
 }
-fn run_display(
-    total_ais: Arc<NonZero<usize>>,
-    is_running: Arc<AtomicBool>,
-    is_real_time: Arc<AtomicBool>,
-    dimensions: Arc<Mutex<Point>>,
-    selected_ai: Arc<Mutex<usize>>,
-    cannons: Arc<Mutex<Box<[Cannon]>>>,
-    enemies: Arc<Mutex<Box<[Vec<Enemy>]>>>,
-    bullets: Arc<Mutex<Box<[Vec<Bullet>]>>>,
-) {
+fn run_display(shared_resources: SharedResources) {
     let (mut rl, thread) = start_raylib();
-    let mut buttons = create_buttons(&total_ais, &is_real_time, &selected_ai);
+    let mut buttons = create_buttons(
+        &shared_resources.total_ais,
+        &shared_resources.is_real_time,
+        &shared_resources.selected_ai,
+    );
 
     while !rl.window_should_close() {
         if rl.is_window_resized() {
-            update_dimensions(&rl, &dimensions, &cannons);
+            update_dimensions(&rl, &shared_resources.dimensions, &shared_resources.cannons);
         }
 
         let mut d = rl.begin_drawing(&thread);
         update_display(
             &mut d,
-            &selected_ai,
+            &shared_resources.selected_ai,
             &mut buttons,
-            &cannons,
-            &enemies,
-            &bullets,
+            &shared_resources.cannons,
+            &shared_resources.enemies,
+            &shared_resources.bullets,
         );
         for button in buttons.iter_mut() {
             button.borrow_mut().update(&d);
@@ -133,7 +119,7 @@ fn run_display(
     }
 
     drop(rl);
-    is_running.store(false, Ordering::SeqCst);
+    shared_resources.is_running.store(false, Ordering::SeqCst);
 }
 
 fn create_buttons(
@@ -289,33 +275,20 @@ fn update_dimensions(
     }
 }
 
-fn run_simulation(
-    total_ais: Arc<NonZero<usize>>,
-    is_running: Arc<AtomicBool>,
-    is_real_time: Arc<AtomicBool>,
-    dimensions: Arc<Mutex<Point>>,
-    cannons: Arc<Mutex<Box<[Cannon]>>>,
-    enemies: Arc<Mutex<Box<[Vec<Enemy>]>>>,
-    bullets: Arc<Mutex<Box<[Vec<Bullet>]>>>,
-) -> JoinHandle<()> {
+fn run_simulation(shared_resources: SharedResources) -> JoinHandle<()> {
     thread::spawn(move || {
         let mut ai_threads: Vec<JoinHandle<()>> = vec![];
-        for ai_index in 0..Into::<usize>::into(*total_ais) {
-            let is_running_clone = Arc::clone(&is_running);
-            let is_real_time_clone = Arc::clone(&is_real_time);
-            let dimensions_clone = Arc::clone(&dimensions);
-            let cannons_clone = Arc::clone(&cannons);
-            let enemies_clone = Arc::clone(&enemies);
-            let bullets_clone = Arc::clone(&bullets);
+        for ai_index in 0..Into::<usize>::into(*shared_resources.total_ais) {
+            let shared_resources_clone = shared_resources.arc_clone();
             let mut time_since_enemy: f32 = ENEMY_COOLDOWN - 2.0;
             let mut time_since_bullet = 0.0_f32;
 
             ai_threads.push(thread::spawn(move || {
                 let mut last_time = Instant::now();
 
-                while is_running_clone.load(Ordering::SeqCst) {
+                while shared_resources_clone.is_running.load(Ordering::SeqCst) {
                     let now = Instant::now();
-                    let delta_time = if is_real_time_clone.load(Ordering::SeqCst) {
+                    let delta_time = if shared_resources_clone.is_real_time.load(Ordering::SeqCst) {
                         now.duration_since(last_time).as_secs_f32()
                     } else {
                         0.001
@@ -327,19 +300,28 @@ fn run_simulation(
 
                     if time_since_enemy >= ENEMY_COOLDOWN {
                         time_since_enemy = 0.0;
-                        spawn_rand_enemy(&enemies_clone, ai_index, &dimensions_clone);
+                        spawn_rand_enemy(
+                            &shared_resources_clone.enemies,
+                            ai_index,
+                            &shared_resources_clone.dimensions,
+                        );
                     }
                     if time_since_bullet >= BULLET_COOLDOWN {
                         time_since_bullet = 0.0;
-                        spawn_bullet(&cannons_clone, ai_index, &bullets_clone, &dimensions_clone);
+                        spawn_bullet(
+                            &shared_resources_clone.cannons,
+                            ai_index,
+                            &shared_resources_clone.bullets,
+                            &shared_resources_clone.dimensions,
+                        );
                     }
 
                     update_entites(
-                        &cannons_clone,
+                        &shared_resources_clone.cannons,
                         ai_index,
                         delta_time,
-                        &enemies_clone,
-                        &bullets_clone,
+                        &shared_resources_clone.enemies,
+                        &shared_resources_clone.bullets,
                     );
                 }
             }));
