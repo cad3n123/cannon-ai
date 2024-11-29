@@ -1,5 +1,5 @@
 macro_rules! lock_with_error {
-    ($var:ident) => {
+    ($var:expr) => {
         $var.lock()
             .expect(&format!("Failed to lock {} mutex", stringify!($var)))
     };
@@ -280,59 +280,70 @@ fn update_dimensions(
 
 fn run_simulation(shared_resources: SharedResources) -> JoinHandle<()> {
     thread::spawn(move || {
-        let mut ai_threads: Vec<JoinHandle<()>> = vec![];
-        for ai_index in 0..Into::<usize>::into(*shared_resources.total_ais) {
-            let shared_resources_clone = shared_resources.arc_clone();
-            let mut time_since_enemy: f32 = ENEMY_COOLDOWN - 2.0;
-            let mut time_since_bullet = 0.0_f32;
-            let mut score = 0.0;
+        while shared_resources.is_running.load(Ordering::SeqCst) {
+            let mut ai_threads: Vec<JoinHandle<()>> = vec![];
+            for ai_index in 0..Into::<usize>::into(*shared_resources.total_ais) {
+                let shared_resources_clone = shared_resources.arc_clone();
+                let mut simulation_time = 0.0_f32;
+                let mut time_since_enemy: f32 = ENEMY_COOLDOWN - 2.0;
+                let mut time_since_bullet = 0.0_f32;
+                let mut score = 0.0;
 
-            ai_threads.push(thread::spawn(move || {
-                let mut last_time = Instant::now();
+                ai_threads.push(thread::spawn(move || {
+                    let mut last_time = Instant::now();
 
-                while shared_resources_clone.is_running.load(Ordering::SeqCst) {
-                    let now = Instant::now();
-                    let delta_time = if shared_resources_clone.is_real_time.load(Ordering::SeqCst) {
-                        now.duration_since(last_time).as_secs_f32()
-                    } else {
-                        0.001
-                    };
-                    last_time = now;
+                    while shared_resources_clone.is_running.load(Ordering::SeqCst)
+                        && simulation_time <= TRAINING_TIME
+                    {
+                        let now = Instant::now();
+                        let delta_time =
+                            if shared_resources_clone.is_real_time.load(Ordering::SeqCst) {
+                                now.duration_since(last_time).as_secs_f32()
+                            } else {
+                                0.001
+                            };
+                        last_time = now;
 
-                    time_since_enemy += delta_time;
-                    time_since_bullet += delta_time;
+                        simulation_time += delta_time;
+                        time_since_enemy += delta_time;
+                        time_since_bullet += delta_time;
 
-                    destroy_entities(
-                        &shared_resources_clone.dimensions,
-                        &shared_resources_clone.enemies,
-                        ai_index,
-                        &shared_resources_clone.bullets,
-                        &mut score,
-                    );
-                    create_entities(
-                        &mut time_since_enemy,
-                        ai_index,
-                        &mut time_since_bullet,
-                        &shared_resources_clone.dimensions,
-                        &shared_resources_clone.cannons,
-                        &shared_resources_clone.bullets,
-                        &shared_resources_clone.enemies,
-                        &mut score,
-                    );
-                    update_entites(
-                        &shared_resources_clone.cannons,
-                        ai_index,
-                        delta_time,
-                        &shared_resources_clone.enemies,
-                        &shared_resources_clone.bullets,
-                        &mut score,
-                    );
-                }
-            }));
-        }
+                        destroy_entities(
+                            &shared_resources_clone.dimensions,
+                            &shared_resources_clone.enemies,
+                            ai_index,
+                            &shared_resources_clone.bullets,
+                            &mut score,
+                        );
+                        create_entities(
+                            &mut time_since_enemy,
+                            ai_index,
+                            &mut time_since_bullet,
+                            &shared_resources_clone.dimensions,
+                            &shared_resources_clone.cannons,
+                            &shared_resources_clone.bullets,
+                            &shared_resources_clone.enemies,
+                            &mut score,
+                        );
+                        update_entites(
+                            &shared_resources_clone.cannons,
+                            ai_index,
+                            delta_time,
+                            &shared_resources_clone.enemies,
+                            &shared_resources_clone.bullets,
+                            &mut score,
+                        );
+                    }
+                    if shared_resources_clone.is_running.load(Ordering::SeqCst) {
+                        let mut ai_scores = lock_with_error!(&shared_resources_clone.ai_scores);
+                        ai_scores[ai_index] = score;
+                    }
+                }));
+            }
 
-        for handle in ai_threads {
-            handle.join().expect("AI thread panicked");
+            for handle in ai_threads {
+                handle.join().expect("AI thread panicked");
+            }
         }
     })
 }
