@@ -47,15 +47,10 @@ use neural_network::NeuralNetwork;
 use rand::Rng;
 use raylib::{color::Color, prelude::RaylibDraw, RaylibHandle};
 use std::{
-    cell::RefCell,
-    f32::consts::PI,
-    rc::Rc,
-    sync::{
+    borrow::Borrow, cell::RefCell, f32::consts::PI, io, num::NonZero, rc::Rc, sync::{
         atomic::{AtomicBool, Ordering},
         Arc, Mutex,
-    },
-    thread::{self, JoinHandle},
-    time::Instant,
+    }, thread::{self, available_parallelism, JoinHandle}, time::Instant
 };
 use typed_floats::Positive;
 use ui::Button;
@@ -68,7 +63,7 @@ const BULLET_COOLDOWN: f32 = 2.0;
 const ENEMY_COOLDOWN: f32 = 5.0;
 const ENEMY_SPEED: f32 = 25.0;
 const ENEMY_SPAWN_DISTANCE: usize = 1;
-pub const TOTAL_AIS: usize = 10;
+
 const SIMULATION_DELTA_TIME: f32 = 0.5;
 const TRAINING_TIME: f32 = 40.0;
 const MAX_TWEAK_CHANGE: f32 = 0.05;
@@ -76,10 +71,11 @@ const MAX_TWEAK_CHANGE: f32 = 0.05;
 fn main() {
     run_cannon_ai();
 }
-fn run_cannon_ai() {
-    let shared_resources = SharedResources::new();
+fn run_cannon_ai() -> Result<(), io::Error> {
+    let shared_resources = SharedResources::new()?;
 
     let simulation = run_simulation(
+        shared_resources.total_ais.clone(),
         shared_resources.is_running.clone(),
         shared_resources.is_real_time.clone(),
         shared_resources.dimensions.clone(),
@@ -89,6 +85,7 @@ fn run_cannon_ai() {
     );
 
     run_display(
+        shared_resources.total_ais.clone(),
         shared_resources.is_running.clone(),
         shared_resources.is_real_time.clone(),
         shared_resources.dimensions.clone(),
@@ -101,18 +98,20 @@ fn run_cannon_ai() {
     simulation.join().expect("Simulation panicked");
 
     println!("Program exiting gracefully");
+    Ok(())
 }
 fn run_display(
+    total_ais: Arc<NonZero<usize>>,
     is_running: Arc<AtomicBool>,
     is_real_time: Arc<AtomicBool>,
     dimensions: Arc<Mutex<Point>>,
     selected_ai: Arc<Mutex<usize>>,
-    cannons: Arc<Mutex<[Cannon; TOTAL_AIS]>>,
-    enemies: Arc<Mutex<[Vec<Enemy>; TOTAL_AIS]>>,
-    bullets: Arc<Mutex<[Vec<Bullet>; TOTAL_AIS]>>,
+    cannons: Arc<Mutex<Box<[Cannon]>>>,
+    enemies: Arc<Mutex<Box<[Vec<Enemy>]>>>,
+    bullets: Arc<Mutex<Box<[Vec<Bullet>]>>>,
 ) {
     let (mut rl, thread) = start_raylib();
-    let mut buttons = create_buttons(&is_real_time, &selected_ai);
+    let mut buttons = create_buttons(&total_ais, &is_real_time, &selected_ai);
 
     while !rl.window_should_close() {
         if rl.is_window_resized() {
@@ -138,6 +137,7 @@ fn run_display(
 }
 
 fn create_buttons(
+    total_ais_clone: &Arc<NonZero<usize>>,
     is_real_time: &Arc<AtomicBool>,
     selected_ai_clone: &Arc<Mutex<usize>>,
 ) -> Box<[Rc<RefCell<Button>>]> {
@@ -168,20 +168,23 @@ fn create_buttons(
         }
     ));
     increment_selected_ai_button = Some(regular_button!(
-        if selected_ai == TOTAL_AIS - 1 {
-            " "
-        } else {
-            ">"
+        {
+            if selected_ai == Into::<usize>::into(**total_ais_clone) - 1 {
+                " "
+            } else {
+                ">"
+            }
         },
         Point { x: 25.0, y: 5.0 },
         {
+            let total_ais_clone = Arc::clone(total_ais_clone);
             let selected_ai_clone = Arc::clone(selected_ai_clone);
             let decrement_selected_ai_button = decrement_selected_ai_button.clone();
             Box::new(move |self_: &mut Button| {
                 let mut selected_ai = lock_with_error!(selected_ai_clone);
                 *selected_ai += 1;
-                if *selected_ai >= TOTAL_AIS - 1 {
-                    *selected_ai = TOTAL_AIS - 1;
+                if *selected_ai >= Into::<usize>::into(*total_ais_clone) - 1 {
+                    *selected_ai = Into::<usize>::into(*total_ais_clone) - 1;
                     self_.text = " ".to_string();
                 }
                 if let Some(ref button) = decrement_selected_ai_button {
@@ -223,9 +226,9 @@ fn update_display(
     d: &mut raylib::prelude::RaylibDrawHandle<'_>,
     selected_ai: &Arc<Mutex<usize>>,
     buttons: &mut Box<[Rc<RefCell<Button>>]>,
-    cannons: &Arc<Mutex<[Cannon; TOTAL_AIS]>>,
-    enemies: &Arc<Mutex<[Vec<Enemy>; TOTAL_AIS]>>,
-    bullets: &Arc<Mutex<[Vec<Bullet>; TOTAL_AIS]>>,
+    cannons: &Arc<Mutex<Box<[Cannon]>>>,
+    enemies: &Arc<Mutex<Box<[Vec<Enemy>]>>>,
+    bullets: &Arc<Mutex<Box<[Vec<Bullet>]>>>,
 ) {
     d.clear_background(Color::RAYWHITE);
 
@@ -244,10 +247,10 @@ fn draw_buttons(
 
 fn draw_entities(
     selected_ai: &Arc<Mutex<usize>>,
-    cannons: &Arc<Mutex<[Cannon; 10]>>,
+    cannons: &Arc<Mutex<Box<[Cannon]>>>,
     d: &mut raylib::prelude::RaylibDrawHandle<'_>,
-    enemies: &Arc<Mutex<[Vec<Enemy>; 10]>>,
-    bullets: &Arc<Mutex<[Vec<Bullet>; 10]>>,
+    enemies: &Arc<Mutex<Box<[Vec<Enemy>]>>>,
+    bullets: &Arc<Mutex<Box<[Vec<Bullet>]>>>,
 ) {
     let selected_ai = lock_with_error!(selected_ai);
     {
@@ -270,7 +273,7 @@ fn draw_entities(
 fn update_dimensions(
     rl: &RaylibHandle,
     dimensions: &Arc<Mutex<Point>>,
-    cannons: &Arc<Mutex<[Cannon; TOTAL_AIS]>>,
+    cannons: &Arc<Mutex<Box<[Cannon]>>>,
 ) {
     let mut dims = lock_with_error!(dimensions);
     let width = rl.get_render_width() as f32;
@@ -287,16 +290,17 @@ fn update_dimensions(
 }
 
 fn run_simulation(
+    total_ais: Arc<NonZero<usize>>,
     is_running: Arc<AtomicBool>,
     is_real_time: Arc<AtomicBool>,
     dimensions: Arc<Mutex<Point>>,
-    cannons: Arc<Mutex<[Cannon; TOTAL_AIS]>>,
-    enemies: Arc<Mutex<[Vec<Enemy>; TOTAL_AIS]>>,
-    bullets: Arc<Mutex<[Vec<Bullet>; TOTAL_AIS]>>,
+    cannons: Arc<Mutex<Box<[Cannon]>>>,
+    enemies: Arc<Mutex<Box<[Vec<Enemy>]>>>,
+    bullets: Arc<Mutex<Box<[Vec<Bullet>]>>>,
 ) -> JoinHandle<()> {
     thread::spawn(move || {
         let mut ai_threads: Vec<JoinHandle<()>> = vec![];
-        for ai_index in 0..TOTAL_AIS {
+        for ai_index in 0..Into::<usize>::into(*total_ais) {
             let is_running_clone = Arc::clone(&is_running);
             let is_real_time_clone = Arc::clone(&is_real_time);
             let dimensions_clone = Arc::clone(&dimensions);
@@ -348,9 +352,9 @@ fn run_simulation(
 }
 
 fn spawn_bullet(
-    cannons_clone: &Arc<Mutex<[Cannon; 10]>>,
+    cannons_clone: &Arc<Mutex<Box<[Cannon]>>>,
     ai_index: usize,
-    bullets_clone: &Arc<Mutex<[Vec<Bullet>; 10]>>,
+    bullets_clone: &Arc<Mutex<Box<[Vec<Bullet>]>>>,
     dimensions_clone: &Arc<Mutex<Point>>,
 ) {
     let direction = lock_with_error!(cannons_clone)[ai_index].direction;
@@ -371,7 +375,7 @@ fn spawn_bullet(
 }
 
 fn spawn_rand_enemy(
-    enemies_clone: &Arc<Mutex<[Vec<Enemy>; 10]>>,
+    enemies_clone: &Arc<Mutex<Box<[Vec<Enemy>]>>>,
     ai_index: usize,
     dimensions_clone: &Arc<Mutex<Point>>,
 ) {
@@ -401,11 +405,11 @@ fn get_center(dimensions_clone: &Arc<Mutex<Point>>) -> (f32, f32) {
 }
 
 fn update_entites(
-    cannons_clone: &Arc<Mutex<[Cannon; 10]>>,
+    cannons_clone: &Arc<Mutex<Box<[Cannon]>>>,
     ai_index: usize,
     delta_time: f32,
-    enemies_clone: &Arc<Mutex<[Vec<Enemy>; 10]>>,
-    bullets_clone: &Arc<Mutex<[Vec<Bullet>; 10]>>,
+    enemies_clone: &Arc<Mutex<Box<[Vec<Enemy>]>>>,
+    bullets_clone: &Arc<Mutex<Box<[Vec<Bullet>]>>>,
 ) {
     {
         let mut cannons = lock_with_error!(cannons_clone);
