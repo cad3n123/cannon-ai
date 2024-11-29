@@ -35,6 +35,7 @@ pub struct SharedResources {
     pub is_running: Arc<AtomicBool>,
     pub is_real_time: Arc<AtomicBool>,
     pub dimensions: Arc<Mutex<Point>>,
+    pub elapsed_simulation_times: Arc<Mutex<Box<[f32]>>>,
     pub selected_ai: Arc<Mutex<usize>>,
     pub ai_scores: Arc<Mutex<Box<[f32]>>>,
     pub direction_ais: Arc<Mutex<Box<[NeuralNetwork]>>>,
@@ -61,6 +62,7 @@ impl SharedResources {
             is_running: new_arc_atomic_bool!(true),
             is_real_time: new_arc_atomic_bool!(true),
             dimensions: new_arc_mutex!(Point { x: 800.0, y: 600.0 }),
+            elapsed_simulation_times: new_arc_mutex!(new_dynamic_array!(total_ais.into(), 0.0, f32)),
             selected_ai: new_arc_mutex!(0),
             ai_scores: new_arc_mutex!(new_dynamic_array!(total_ais.into(), 0.0, f32)),
             direction_ais: new_arc_mutex!(new_dynamic_array!(
@@ -84,6 +86,7 @@ impl SharedResources {
             is_running: Arc::clone(&self.is_running),
             is_real_time: Arc::clone(&self.is_real_time),
             dimensions: Arc::clone(&self.dimensions),
+            elapsed_simulation_times: Arc::clone(&self.elapsed_simulation_times),
             selected_ai: Arc::clone(&self.selected_ai),
             ai_scores: Arc::clone(&self.ai_scores),
             direction_ais: Arc::clone(&self.direction_ais),

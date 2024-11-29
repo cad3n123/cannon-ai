@@ -77,7 +77,7 @@ const ENEMY_SPAWN_DISTANCE: usize = 1;
 
 const TOTAL_VIEW_RAYS: usize = 20;
 const VIEW_RAY_LENGTH: usize = 400;
-const SIMULATION_DELTA_TIME: f32 = 0.5;
+const FAST_DELTA_TIME: f32 = 0.005;
 const TRAINING_TIME: f32 = 40.0;
 const MAX_TWEAK_CHANGE: f32 = 0.05;
 
@@ -122,6 +122,16 @@ fn run_display(shared_resources: SharedResources) {
         for button in buttons.iter_mut() {
             button.borrow_mut().update(&d);
         }
+        let selected_ai = {
+            *lock_with_error!(shared_resources.selected_ai)
+        };
+        let elapsed_simulation_time = {
+            lock_with_error!(shared_resources.elapsed_simulation_times)[selected_ai] as i32
+        };
+        let center_x = {
+            lock_with_error!(shared_resources.dimensions).x / 2.0
+        };
+        d.draw_text(format!("Elapsed time: {elapsed_simulation_time}/{TRAINING_TIME}s").as_str(), (center_x - 200.0) as i32, 50, 40, Color::BLACK);
     }
 
     drop(rl);
@@ -288,7 +298,6 @@ fn run_simulation(shared_resources: SharedResources) -> JoinHandle<()> {
             let mut ai_threads: Vec<JoinHandle<()>> = vec![];
             for ai_index in 0..Into::<usize>::into(*shared_resources.total_ais) {
                 let shared_resources_clone = shared_resources.arc_clone();
-                let mut simulation_time = 0.0_f32;
                 let mut time_since_enemy: f32 = ENEMY_COOLDOWN - 3.0;
                 let mut time_since_bullet = 0.0_f32;
                 let mut score = 0.0;
@@ -296,19 +305,25 @@ fn run_simulation(shared_resources: SharedResources) -> JoinHandle<()> {
                 ai_threads.push(thread::spawn(move || {
                     let mut last_time = Instant::now();
 
-                    while shared_resources_clone.is_running.load(Ordering::SeqCst)
-                        && simulation_time <= TRAINING_TIME
+                    while {
+                        let elapsed_simulation_time = lock_with_error!(shared_resources_clone.elapsed_simulation_times)[ai_index];
+                        shared_resources_clone.is_running.load(Ordering::SeqCst)
+                        && elapsed_simulation_time <= TRAINING_TIME
+                    }
                     {
                         let now = Instant::now();
                         let delta_time =
                             if shared_resources_clone.is_real_time.load(Ordering::SeqCst) {
                                 now.duration_since(last_time).as_secs_f32()
                             } else {
-                                0.001
+                                FAST_DELTA_TIME
                             };
                         last_time = now;
 
-                        simulation_time += delta_time;
+                        {
+                            let elapsed_simulation_time = &mut lock_with_error!(shared_resources_clone.elapsed_simulation_times)[ai_index];
+                            *elapsed_simulation_time += delta_time;
+                        }
                         time_since_enemy += delta_time;
                         time_since_bullet += delta_time;
 
