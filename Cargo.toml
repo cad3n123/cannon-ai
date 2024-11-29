@@ -12,4 +12,7 @@ serde_json = "1.0.133"
 typed_floats = "1.0.2"
 
 [profile.release]
-lto = true
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+debug = false
