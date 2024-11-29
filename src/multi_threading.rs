@@ -23,7 +23,11 @@ use std::{
     thread::available_parallelism,
 };
 
-use crate::entity::{Bullet, Cannon, Enemy, Point};
+use crate::{
+    entity::{Bullet, Cannon, Enemy, Point},
+    neural_network::NeuralNetwork,
+    TOTAL_VIEW_RAYS,
+};
 
 #[derive(Clone)]
 pub struct SharedResources {
@@ -33,6 +37,8 @@ pub struct SharedResources {
     pub dimensions: Arc<Mutex<Point>>,
     pub selected_ai: Arc<Mutex<usize>>,
     pub ai_scores: Arc<Mutex<Box<[f32]>>>,
+    pub direction_ais: Arc<Mutex<Box<[NeuralNetwork]>>>,
+    pub shooting_ais: Arc<Mutex<Box<[NeuralNetwork]>>>,
     pub cannons: Arc<Mutex<Box<[Cannon]>>>,
     pub bullets: Arc<Mutex<Box<[Vec<Bullet>]>>>,
     pub enemies: Arc<Mutex<Box<[Vec<Enemy>]>>>,
@@ -57,6 +63,16 @@ impl SharedResources {
             dimensions: new_arc_mutex!(Point { x: 800.0, y: 600.0 }),
             selected_ai: new_arc_mutex!(0),
             ai_scores: new_arc_mutex!(new_dynamic_array!(total_ais.into(), 0.0, f32)),
+            direction_ais: new_arc_mutex!(new_dynamic_array!(
+                total_ais.into(),
+                NeuralNetwork::new_random_unchecked(&[TOTAL_VIEW_RAYS, TOTAL_VIEW_RAYS / 2, 3]),
+                NeuralNetwork
+            )),
+            shooting_ais: new_arc_mutex!(new_dynamic_array!(
+                total_ais.into(),
+                NeuralNetwork::new_random_unchecked(&[TOTAL_VIEW_RAYS, TOTAL_VIEW_RAYS / 2, 2]),
+                NeuralNetwork
+            )),
             cannons: new_arc_mutex!(new_dynamic_array!(total_ais.into(), Cannon::new(), Cannon)),
             bullets: new_arc_mutex!(new_dynamic_array!(total_ais.into(), vec![], Vec<Bullet>)),
             enemies: new_arc_mutex!(new_dynamic_array!(total_ais.into(), vec![], Vec<Enemy>)),
@@ -70,6 +86,8 @@ impl SharedResources {
             dimensions: Arc::clone(&self.dimensions),
             selected_ai: Arc::clone(&self.selected_ai),
             ai_scores: Arc::clone(&self.ai_scores),
+            direction_ais: Arc::clone(&self.direction_ais),
+            shooting_ais: Arc::clone(&self.shooting_ais),
             cannons: Arc::clone(&self.cannons),
             bullets: Arc::clone(&self.bullets),
             enemies: Arc::clone(&self.enemies),

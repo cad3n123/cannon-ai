@@ -42,7 +42,7 @@ mod ui;
 
 use entity::{
     Bullet, Cannon, Enemy, Entity, Point, Sprite, BARREL_HEIGHT, BULLET_HEIGHT, CANNON_RADIUS,
-    ENEMY_HEIGHT,
+    ENEMY_HEIGHT, ENEMY_WIDTH,
 };
 use multi_threading::SharedResources;
 use na::DVector;
@@ -67,7 +67,7 @@ use typed_floats::Positive;
 use ui::Button;
 
 const TWO_PI: f32 = 2.0 * PI;
-const VIEW_RAY_LENGTH: usize = 400;
+const HALF_PI: f32 = PI / 2.0;
 const GUN_ROTATE_VELOCITY: f32 = 0.75;
 const BULLET_SPEED: f32 = 100.0;
 const BULLET_COOLDOWN: f32 = 2.0;
@@ -75,6 +75,8 @@ const ENEMY_COOLDOWN: f32 = 5.0;
 const ENEMY_SPEED: f32 = 25.0;
 const ENEMY_SPAWN_DISTANCE: usize = 1;
 
+const TOTAL_VIEW_RAYS: usize = 20;
+const VIEW_RAY_LENGTH: usize = 400;
 const SIMULATION_DELTA_TIME: f32 = 0.5;
 const TRAINING_TIME: f32 = 40.0;
 const MAX_TWEAK_CHANGE: f32 = 0.05;
@@ -110,6 +112,7 @@ fn run_display(shared_resources: SharedResources) {
         let mut d = rl.begin_drawing(&thread);
         update_display(
             &mut d,
+            &shared_resources.dimensions,
             &shared_resources.selected_ai,
             &mut buttons,
             &shared_resources.cannons,
@@ -213,6 +216,7 @@ fn start_raylib() -> (RaylibHandle, raylib::RaylibThread) {
 }
 fn update_display(
     d: &mut raylib::prelude::RaylibDrawHandle<'_>,
+    dimensions: &Arc<Mutex<Point>>,
     selected_ai: &Arc<Mutex<usize>>,
     buttons: &mut Box<[Rc<RefCell<Button>>]>,
     cannons: &Arc<Mutex<Box<[Cannon]>>>,
@@ -285,7 +289,7 @@ fn run_simulation(shared_resources: SharedResources) -> JoinHandle<()> {
             for ai_index in 0..Into::<usize>::into(*shared_resources.total_ais) {
                 let shared_resources_clone = shared_resources.arc_clone();
                 let mut simulation_time = 0.0_f32;
-                let mut time_since_enemy: f32 = ENEMY_COOLDOWN - 2.0;
+                let mut time_since_enemy: f32 = ENEMY_COOLDOWN - 3.0;
                 let mut time_since_bullet = 0.0_f32;
                 let mut score = 0.0;
 
@@ -326,12 +330,14 @@ fn run_simulation(shared_resources: SharedResources) -> JoinHandle<()> {
                             &mut score,
                         );
                         update_entites(
-                            &shared_resources_clone.cannons,
                             ai_index,
                             delta_time,
-                            &shared_resources_clone.enemies,
-                            &shared_resources_clone.bullets,
                             &mut score,
+                            &shared_resources_clone.dimensions,
+                            &shared_resources_clone.direction_ais,
+                            &shared_resources_clone.cannons,
+                            &shared_resources_clone.bullets,
+                            &shared_resources_clone.enemies,
                         );
                     }
                     if shared_resources_clone.is_running.load(Ordering::SeqCst) {
@@ -346,6 +352,68 @@ fn run_simulation(shared_resources: SharedResources) -> JoinHandle<()> {
             }
         }
     })
+}
+
+fn get_decided_direction(
+    ai_index: usize,
+    known_enemy_locations: [f32; 20],
+    direction_ais: &Arc<Mutex<Box<[NeuralNetwork]>>>,
+) -> f32 {
+    let direction_ais = lock_with_error!(direction_ais);
+    let decided_direction = find_largest_index_unchecked(
+        direction_ais[ai_index]
+            .run_unchecked(&DVector::from_vec(known_enemy_locations.to_vec()))
+            .as_slice(),
+    );
+    decided_direction as f32 - 1.0
+}
+
+fn get_known_enemy_locations(
+    ai_index: usize,
+    dimensions: &Arc<Mutex<Point>>,
+    cannons: &Arc<Mutex<Box<[Cannon]>>>,
+    enemies: &Arc<Mutex<Box<[Vec<Enemy>]>>>,
+) -> [f32; 20] {
+    let mut known_enemy_locations = [0.0_f32; TOTAL_VIEW_RAYS];
+    let dimensions = { lock_with_error!(dimensions).clone() };
+    let direction = { lock_with_error!(cannons)[ai_index].direction };
+    let (center_x, center_y) = (dimensions.x / 2.0, dimensions.y / 2.0);
+    for (i, known_enemy_location) in known_enemy_locations
+        .iter_mut()
+        .enumerate()
+        .take(TOTAL_VIEW_RAYS)
+    {
+        *known_enemy_location = 0.0;
+        let mut angle = direction + TWO_PI * i as f32 / TOTAL_VIEW_RAYS as f32 - PI;
+        if angle >= TWO_PI {
+            angle -= TWO_PI;
+        }
+        if angle < 0.0 {
+            angle += TWO_PI;
+        }
+
+        let enemies = &*lock_with_error!(enemies)[ai_index];
+        for enemy in enemies.iter() {
+            let relative_position = enemy.position.difference(&Point {
+                x: center_x,
+                y: center_y,
+            });
+            let distance = relative_position.magnitude();
+            if distance > VIEW_RAY_LENGTH as f32 {
+                continue;
+            }
+
+            let location_direction = relative_position.arc_tan();
+            let delta_angle = angle - location_direction;
+            if delta_angle.abs() < HALF_PI
+                && distance * delta_angle.sin().abs() <= ENEMY_WIDTH / 2.0
+            {
+                *known_enemy_location = 1.0;
+                break;
+            }
+        }
+    }
+    known_enemy_locations
 }
 
 fn destroy_entities(
@@ -479,27 +547,36 @@ fn get_center(dimensions_clone: &Arc<Mutex<Point>>) -> (f32, f32) {
 }
 
 fn update_entites(
-    cannons_clone: &Arc<Mutex<Box<[Cannon]>>>,
     ai_index: usize,
     delta_time: f32,
-    enemies_clone: &Arc<Mutex<Box<[Vec<Enemy>]>>>,
-    bullets_clone: &Arc<Mutex<Box<[Vec<Bullet>]>>>,
     score: &mut f32,
+    dimensions: &Arc<Mutex<Point>>,
+    direction_ais: &Arc<Mutex<Box<[NeuralNetwork]>>>,
+    cannons: &Arc<Mutex<Box<[Cannon]>>>,
+    bullets: &Arc<Mutex<Box<[Vec<Bullet>]>>>,
+    enemies: &Arc<Mutex<Box<[Vec<Enemy>]>>>,
 ) {
     {
-        let mut cannons = lock_with_error!(cannons_clone);
-        let delta_direction = (ai_index + 1) as f32 * delta_time;
+        let known_enemy_locations =
+            get_known_enemy_locations(ai_index, dimensions, cannons, enemies);
+        let decided_direction =
+            get_decided_direction(ai_index, known_enemy_locations, direction_ais);
+        let mut cannons = lock_with_error!(cannons);
+        let delta_direction = decided_direction * GUN_ROTATE_VELOCITY * delta_time;
         cannons[ai_index].direction += delta_direction;
+        while cannons[ai_index].direction >= TWO_PI {
+            cannons[ai_index].direction -= TWO_PI;
+        }
         *score -= delta_direction;
     }
     {
-        let enemies = &mut lock_with_error!(enemies_clone)[ai_index];
+        let enemies = &mut lock_with_error!(enemies)[ai_index];
         for enemy in enemies {
             enemy.update(delta_time);
         }
     }
     {
-        let bullets = &mut lock_with_error!(bullets_clone)[ai_index];
+        let bullets = &mut lock_with_error!(bullets)[ai_index];
         for bullet in bullets {
             bullet.update(delta_time);
         }
