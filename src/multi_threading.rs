@@ -19,8 +19,10 @@ macro_rules! new_dynamic_array {
 }
 
 use std::{
-    io,
+    fs::File,
+    io::{self, Read, Write},
     num::NonZero,
+    path::Path,
     sync::{atomic::AtomicBool, Arc, Mutex},
     thread::available_parallelism,
 };
@@ -50,7 +52,10 @@ pub struct SharedResources {
 impl SharedResources {
     pub fn new() -> Result<Self, io::Error> {
         let total_ais = {
-            let total_ais = available_parallelism()?;
+            let mut total_ais = available_parallelism()?;
+            if total_ais > unsafe { NonZero::new_unchecked(1) } {
+                total_ais = unsafe { NonZero::new_unchecked(Into::<usize>::into(total_ais) - 1) };
+            }
             if Into::<usize>::into(total_ais) % 2 == 0 {
                 total_ais
             } else if Into::<usize>::into(total_ais) < 10 {
@@ -71,16 +76,46 @@ impl SharedResources {
             )),
             selected_ai: new_arc_mutex!(0),
             ai_scores: new_arc_mutex!(new_dynamic_array!(total_ais.into(), 0.0, f32)),
-            direction_ais: new_arc_mutex!(new_dynamic_array!(
-                total_ais.into(),
-                NeuralNetwork::new_random_unchecked(&[TOTAL_VIEW_RAYS, TOTAL_VIEW_RAYS / 2, 3]),
-                NeuralNetwork
-            )),
-            shooting_ais: new_arc_mutex!(new_dynamic_array!(
-                total_ais.into(),
-                NeuralNetwork::new_random_unchecked(&[TOTAL_VIEW_RAYS, TOTAL_VIEW_RAYS / 2, 2]),
-                NeuralNetwork
-            )),
+            direction_ais: {
+                let file_name = format!("direction_ais_{}.json", Into::<usize>::into(total_ais));
+                if Path::new(file_name.as_str()).exists() {
+                    let mut file = File::open(file_name.clone())?;
+                    let mut json = String::new();
+                    file.read_to_string(&mut json)?;
+                    new_arc_mutex!(serde_json::from_str(&json)
+                        .unwrap_or_else(|_| panic!("Cannot read file {file_name}")))
+                } else {
+                    new_arc_mutex!(new_dynamic_array!(
+                        total_ais.into(),
+                        NeuralNetwork::new_random_unchecked(&[
+                            TOTAL_VIEW_RAYS,
+                            TOTAL_VIEW_RAYS / 2,
+                            3
+                        ]),
+                        NeuralNetwork
+                    ))
+                }
+            },
+            shooting_ais: {
+                let file_name = format!("shooting_ais_{}.json", Into::<usize>::into(total_ais));
+                if Path::new(file_name.as_str()).exists() {
+                    let mut file = File::open(file_name.clone())?;
+                    let mut json = String::new();
+                    file.read_to_string(&mut json)?;
+                    new_arc_mutex!(serde_json::from_str(&json)
+                        .unwrap_or_else(|_| panic!("Cannot read file {file_name}")))
+                } else {
+                    new_arc_mutex!(new_dynamic_array!(
+                        total_ais.into(),
+                        NeuralNetwork::new_random_unchecked(&[
+                            TOTAL_VIEW_RAYS,
+                            TOTAL_VIEW_RAYS / 2,
+                            2
+                        ]),
+                        NeuralNetwork
+                    ))
+                }
+            },
             cannons: new_arc_mutex!(new_dynamic_array!(total_ais.into(), Cannon::new(), Cannon)),
             bullets: new_arc_mutex!(new_dynamic_array!(total_ais.into(), vec![], Vec<Bullet>)),
             enemies: new_arc_mutex!(new_dynamic_array!(total_ais.into(), vec![], Vec<Enemy>)),
@@ -101,5 +136,21 @@ impl SharedResources {
             bullets: Arc::clone(&self.bullets),
             enemies: Arc::clone(&self.enemies),
         }
+    }
+    pub fn save_ais(&self) -> Result<(), io::Error> {
+        let total_ais = Into::<usize>::into(*self.total_ais);
+
+        let direction_json =
+            serde_json::to_string_pretty(&lock_with_error!(self.direction_ais).clone()).unwrap();
+        let file_name = format!("direction_ais_{}.json", total_ais);
+        let mut file = File::create(file_name)?;
+        file.write_all(direction_json.as_bytes())?;
+
+        let shooting_json =
+            serde_json::to_string_pretty(&lock_with_error!(self.shooting_ais).clone()).unwrap();
+        let file_name = format!("shooting_ais_{}.json", total_ais);
+        let mut file = File::create(file_name)?;
+        file.write_all(shooting_json.as_bytes())?;
+        Ok(())
     }
 }

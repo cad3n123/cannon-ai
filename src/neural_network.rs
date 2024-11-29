@@ -2,9 +2,10 @@
 
 use na::{self, DMatrix, DVector};
 use rand::Rng;
+use serde::{Deserialize, Serialize};
 use typed_floats::Positive;
 
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct NeuralNetwork {
     input_size: usize,
     output_size: usize,

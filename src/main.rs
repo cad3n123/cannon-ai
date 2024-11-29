@@ -50,7 +50,6 @@ use neural_network::NeuralNetwork;
 use rand::Rng;
 use raylib::{color::Color, prelude::RaylibDraw, RaylibHandle};
 use std::{
-    borrow::Borrow,
     cell::RefCell,
     f32::consts::PI,
     io,
@@ -60,7 +59,7 @@ use std::{
         atomic::{AtomicBool, Ordering},
         Arc, Mutex,
     },
-    thread::{self, available_parallelism, JoinHandle},
+    thread::{self, JoinHandle},
     time::Instant,
 };
 use typed_floats::Positive;
@@ -81,8 +80,9 @@ const FAST_DELTA_TIME: f32 = 0.005;
 const TRAINING_TIME: f32 = 40.0;
 const MAX_TWEAK_CHANGE: f32 = 0.05;
 
-fn main() {
-    run_cannon_ai();
+fn main() -> Result<(), io::Error> {
+    run_cannon_ai()?;
+    Ok(())
 }
 fn run_cannon_ai() -> Result<(), io::Error> {
     let shared_resources = SharedResources::new()?;
@@ -92,6 +92,7 @@ fn run_cannon_ai() -> Result<(), io::Error> {
     run_display(shared_resources.clone());
 
     simulation.join().expect("Simulation panicked");
+    shared_resources.save_ais()?;
 
     println!("Program exiting gracefully");
     Ok(())
@@ -112,7 +113,6 @@ fn run_display(shared_resources: SharedResources) {
         let mut d = rl.begin_drawing(&thread);
         update_display(
             &mut d,
-            &shared_resources.dimensions,
             &shared_resources.selected_ai,
             &mut buttons,
             &shared_resources.cannons,
@@ -162,6 +162,7 @@ fn create_buttons(
         let lock = lock_with_error!(selected_ai_clone);
         *lock
     };
+    #[allow(unused_assignments)]
     let mut decrement_selected_ai_button: Option<Rc<RefCell<Button>>> = None;
     let mut increment_selected_ai_button: Option<Rc<RefCell<Button>>> = None;
     decrement_selected_ai_button = Some(regular_button!(
@@ -241,7 +242,6 @@ fn start_raylib() -> (RaylibHandle, raylib::RaylibThread) {
 }
 fn update_display(
     d: &mut raylib::prelude::RaylibDrawHandle<'_>,
-    dimensions: &Arc<Mutex<Point>>,
     selected_ai: &Arc<Mutex<usize>>,
     buttons: &mut Box<[Rc<RefCell<Button>>]>,
     cannons: &Arc<Mutex<Box<[Cannon]>>>,
@@ -416,6 +416,9 @@ fn run_simulation(shared_resources: SharedResources) -> JoinHandle<()> {
                     for (bad_ai, good_ai) in worst_ais.iter().zip(best_ais.iter()) {
                         direction_ais[*bad_ai] = direction_ais[*good_ai].clone();
                         shooting_ais[*bad_ai] = shooting_ais[*good_ai].clone();
+                        shooting_ais[*bad_ai].tweak_continuous(unsafe {
+                            Positive::<f32>::new_unchecked(MAX_TWEAK_CHANGE)
+                        });
                     }
                 }
                 {
@@ -575,7 +578,7 @@ fn destroy_entities(
         }
     }
 }
-
+#[allow(clippy::too_many_arguments)]
 fn create_entities(
     ai_index: usize,
     score: &mut f32,
@@ -654,7 +657,7 @@ fn get_center(dimensions_clone: &Arc<Mutex<Point>>) -> (f32, f32) {
     let (center_x, center_y) = (dimensions.x / 2.0, dimensions.y / 2.0);
     (center_x, center_y)
 }
-
+#[allow(clippy::too_many_arguments)]
 fn update_entites(
     ai_index: usize,
     delta_time: f32,
