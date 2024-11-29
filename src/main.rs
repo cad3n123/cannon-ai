@@ -40,7 +40,10 @@ mod multi_threading;
 mod neural_network;
 mod ui;
 
-use entity::{Bullet, Cannon, Enemy, Entity, Point, Sprite, BARREL_HEIGHT, CANNON_RADIUS};
+use entity::{
+    Bullet, Cannon, Enemy, Entity, Point, Sprite, BARREL_HEIGHT, BULLET_HEIGHT, CANNON_RADIUS,
+    ENEMY_HEIGHT,
+};
 use multi_threading::SharedResources;
 use na::DVector;
 use neural_network::NeuralNetwork;
@@ -298,24 +301,21 @@ fn run_simulation(shared_resources: SharedResources) -> JoinHandle<()> {
                     time_since_enemy += delta_time;
                     time_since_bullet += delta_time;
 
-                    if time_since_enemy >= ENEMY_COOLDOWN {
-                        time_since_enemy = 0.0;
-                        spawn_rand_enemy(
-                            &shared_resources_clone.enemies,
-                            ai_index,
-                            &shared_resources_clone.dimensions,
-                        );
-                    }
-                    if time_since_bullet >= BULLET_COOLDOWN {
-                        time_since_bullet = 0.0;
-                        spawn_bullet(
-                            &shared_resources_clone.cannons,
-                            ai_index,
-                            &shared_resources_clone.bullets,
-                            &shared_resources_clone.dimensions,
-                        );
-                    }
-
+                    destroy_entities(
+                        &shared_resources_clone.dimensions,
+                        &shared_resources_clone.enemies,
+                        ai_index,
+                        &shared_resources_clone.bullets,
+                    );
+                    create_entities(
+                        &mut time_since_enemy,
+                        ai_index,
+                        &mut time_since_bullet,
+                        &shared_resources_clone.dimensions,
+                        &shared_resources_clone.cannons,
+                        &shared_resources_clone.bullets,
+                        &shared_resources_clone.enemies,
+                    );
                     update_entites(
                         &shared_resources_clone.cannons,
                         ai_index,
@@ -331,6 +331,79 @@ fn run_simulation(shared_resources: SharedResources) -> JoinHandle<()> {
             handle.join().expect("AI thread panicked");
         }
     })
+}
+
+fn destroy_entities(
+    shared_dimensions: &Arc<Mutex<Point>>,
+    shared_enemies: &Arc<Mutex<Box<[Vec<Enemy>]>>>,
+    ai_index: usize,
+    shared_bullets: &Arc<Mutex<Box<[Vec<Bullet>]>>>,
+) {
+    let locked_dimensions = lock_with_error!(shared_dimensions);
+    let dimensions = locked_dimensions.clone();
+    drop(locked_dimensions);
+    let enemies = &mut lock_with_error!(shared_enemies)[ai_index];
+    {
+        let bullets = &mut lock_with_error!(shared_bullets)[ai_index];
+        let mut i = 0;
+        'bullet: while i < bullets.len() {
+            let bullet_pos = &bullets[i].position;
+            if bullet_pos.x < 0.0
+                || bullet_pos.x > dimensions.x
+                || bullet_pos.y < 0.0
+                || bullet_pos.y > dimensions.y
+            {
+                bullets.remove(i);
+            } else {
+                let mut j = 0;
+                while j < enemies.len() {
+                    let enemy_pos = &enemies[j].position;
+                    if bullet_pos.difference(enemy_pos).magnitude()
+                        <= (BULLET_HEIGHT + ENEMY_HEIGHT) / 2.0
+                    {
+                        bullets.remove(i);
+                        enemies.remove(j);
+                        continue 'bullet;
+                    } else {
+                        j += 1;
+                    }
+                }
+                i += 1;
+            }
+        }
+    }
+    let mut i = 0;
+    while i < enemies.len() {
+        let center_offset = enemies[i].position.difference(&Point {
+            x: dimensions.x / 2.0,
+            y: dimensions.y / 2.0,
+        });
+        let center_distance = center_offset.magnitude();
+        if center_distance < CANNON_RADIUS + ENEMY_HEIGHT / 2.0 {
+            enemies.remove(i);
+        } else {
+            i += 1;
+        }
+    }
+}
+
+fn create_entities(
+    time_since_enemy: &mut f32,
+    ai_index: usize,
+    time_since_bullet: &mut f32,
+    dimensions: &Arc<Mutex<Point>>,
+    cannons: &Arc<Mutex<Box<[Cannon]>>>,
+    bullets: &Arc<Mutex<Box<[Vec<Bullet>]>>>,
+    enemies: &Arc<Mutex<Box<[Vec<Enemy>]>>>,
+) {
+    if *time_since_enemy >= ENEMY_COOLDOWN {
+        *time_since_enemy = 0.0;
+        spawn_rand_enemy(enemies, ai_index, dimensions);
+    }
+    if *time_since_bullet >= BULLET_COOLDOWN {
+        *time_since_bullet = 0.0;
+        spawn_bullet(cannons, ai_index, bullets, dimensions);
+    }
 }
 
 fn spawn_bullet(

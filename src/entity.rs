@@ -13,10 +13,10 @@ pub const BARREL_HEIGHT: f32 = 40.0;
 const BARREL_WIDTH: f32 = 2.0 * BARREL_HEIGHT / 3.0;
 const ENEMY_SIZE: usize = 10;
 const ENEMY_WIDTH: f32 = 7.5 * ENEMY_SIZE as f32;
-const ENEMY_HEIGHT: f32 = 10.0 * ENEMY_SIZE as f32;
+pub const ENEMY_HEIGHT: f32 = 10.0 * ENEMY_SIZE as f32;
 const BULLET_SIZE: usize = 10;
 const BULLET_WIDTH: f32 = 1.5 * BULLET_SIZE as f32;
-const BULLET_HEIGHT: f32 = 2.5 * BULLET_SIZE as f32;
+pub const BULLET_HEIGHT: f32 = 2.5 * BULLET_SIZE as f32;
 
 #[derive(Clone)]
 pub struct Point {
@@ -37,6 +37,18 @@ impl Point {
     pub fn sum(&self, other: &Point) -> Point {
         self.clone().sum_to_owned(other)
     }
+    pub fn difference_to_borrowed(&mut self, other: &Point) -> &mut Point {
+        self.x -= other.x;
+        self.y -= other.y;
+        self
+    }
+    pub fn difference_to_owned(mut self, other: &Point) -> Point {
+        self.difference_to_borrowed(other);
+        self
+    }
+    pub fn difference(&self, other: &Point) -> Point {
+        self.clone().difference_to_owned(other)
+    }
     pub fn scale_to_borrowed(&mut self, scalar: f32) -> &mut Point {
         self.x *= scalar;
         self.y *= scalar;
@@ -48,6 +60,9 @@ impl Point {
     }
     pub fn scale(&self, scalar: f32) -> Point {
         self.clone().scale_to_owned(scalar)
+    }
+    pub fn magnitude(&self) -> f32 {
+        (self.x.powi(2) + self.y.powi(2)).sqrt()
     }
 }
 
