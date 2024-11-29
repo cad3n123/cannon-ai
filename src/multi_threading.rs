@@ -1,5 +1,6 @@
 #![allow(dead_code)]
 
+#[macro_export]
 macro_rules! new_arc_mutex {
     ($val:expr) => {
         std::sync::Arc::new(std::sync::Mutex::new($val))
@@ -10,6 +11,7 @@ macro_rules! new_arc_atomic_bool {
         std::sync::Arc::new(std::sync::atomic::AtomicBool::new($val))
     };
 }
+#[macro_export]
 macro_rules! new_dynamic_array {
     ($x:expr, $y:expr, $z:ty) => {
         (0..$x).map(|_| $y).collect::<Vec<$z>>().into_boxed_slice()
@@ -62,7 +64,11 @@ impl SharedResources {
             is_running: new_arc_atomic_bool!(true),
             is_real_time: new_arc_atomic_bool!(true),
             dimensions: new_arc_mutex!(Point { x: 800.0, y: 600.0 }),
-            elapsed_simulation_times: new_arc_mutex!(new_dynamic_array!(total_ais.into(), 0.0, f32)),
+            elapsed_simulation_times: new_arc_mutex!(new_dynamic_array!(
+                total_ais.into(),
+                0.0,
+                f32
+            )),
             selected_ai: new_arc_mutex!(0),
             ai_scores: new_arc_mutex!(new_dynamic_array!(total_ais.into(), 0.0, f32)),
             direction_ais: new_arc_mutex!(new_dynamic_array!(

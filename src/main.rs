@@ -71,7 +71,7 @@ const HALF_PI: f32 = PI / 2.0;
 const GUN_ROTATE_VELOCITY: f32 = 0.75;
 const BULLET_SPEED: f32 = 100.0;
 const BULLET_COOLDOWN: f32 = 2.0;
-const ENEMY_COOLDOWN: f32 = 5.0;
+const ENEMY_COOLDOWN: f32 = 4.0;
 const ENEMY_SPEED: f32 = 25.0;
 const ENEMY_SPAWN_DISTANCE: usize = 1;
 
@@ -122,20 +122,35 @@ fn run_display(shared_resources: SharedResources) {
         for button in buttons.iter_mut() {
             button.borrow_mut().update(&d);
         }
-        let selected_ai = {
-            *lock_with_error!(shared_resources.selected_ai)
-        };
-        let elapsed_simulation_time = {
-            lock_with_error!(shared_resources.elapsed_simulation_times)[selected_ai] as i32
-        };
-        let center_x = {
-            lock_with_error!(shared_resources.dimensions).x / 2.0
-        };
-        d.draw_text(format!("Elapsed time: {elapsed_simulation_time}/{TRAINING_TIME}s").as_str(), (center_x - 200.0) as i32, 50, 40, Color::BLACK);
+        display_info(
+            &shared_resources.selected_ai,
+            &shared_resources.dimensions,
+            &shared_resources.elapsed_simulation_times,
+            d,
+        );
     }
 
     drop(rl);
     shared_resources.is_running.store(false, Ordering::SeqCst);
+}
+
+fn display_info(
+    selected_ai: &Arc<Mutex<usize>>,
+    dimensions: &Arc<Mutex<Point>>,
+    elapsed_simulation_times: &Arc<Mutex<Box<[f32]>>>,
+    mut d: raylib::prelude::RaylibDrawHandle<'_>,
+) {
+    let selected_ai = { *lock_with_error!(selected_ai) };
+    let elapsed_simulation_time =
+        { lock_with_error!(elapsed_simulation_times)[selected_ai] as i32 };
+    let center_x = { lock_with_error!(dimensions).x / 2.0 };
+    d.draw_text(
+        format!("Elapsed time: {elapsed_simulation_time}/{TRAINING_TIME}s").as_str(),
+        (center_x - 200.0) as i32,
+        50,
+        40,
+        Color::BLACK,
+    );
 }
 
 fn create_buttons(
@@ -306,11 +321,12 @@ fn run_simulation(shared_resources: SharedResources) -> JoinHandle<()> {
                     let mut last_time = Instant::now();
 
                     while {
-                        let elapsed_simulation_time = lock_with_error!(shared_resources_clone.elapsed_simulation_times)[ai_index];
+                        let elapsed_simulation_time =
+                            lock_with_error!(shared_resources_clone.elapsed_simulation_times)
+                                [ai_index];
                         shared_resources_clone.is_running.load(Ordering::SeqCst)
-                        && elapsed_simulation_time <= TRAINING_TIME
-                    }
-                    {
+                            && elapsed_simulation_time <= TRAINING_TIME
+                    } {
                         let now = Instant::now();
                         let delta_time =
                             if shared_resources_clone.is_real_time.load(Ordering::SeqCst) {
@@ -321,7 +337,9 @@ fn run_simulation(shared_resources: SharedResources) -> JoinHandle<()> {
                         last_time = now;
 
                         {
-                            let elapsed_simulation_time = &mut lock_with_error!(shared_resources_clone.elapsed_simulation_times)[ai_index];
+                            let elapsed_simulation_time = &mut lock_with_error!(
+                                shared_resources_clone.elapsed_simulation_times
+                            )[ai_index];
                             *elapsed_simulation_time += delta_time;
                         }
                         time_since_enemy += delta_time;
@@ -372,6 +390,55 @@ fn run_simulation(shared_resources: SharedResources) -> JoinHandle<()> {
 
             for handle in ai_threads {
                 handle.join().expect("AI thread panicked");
+            }
+            if shared_resources.is_running.load(Ordering::SeqCst) {
+                let total_ais = { Into::<usize>::into(*shared_resources.total_ais) };
+
+                let worst_ais = {
+                    let ai_scores = lock_with_error!(&shared_resources.ai_scores);
+                    //println!("AI scores: {ai_scores:?}");
+                    find_n_lowest_indices(&ai_scores, (total_ais as f32 / 2.0).floor() as usize)
+                };
+                //println!("Worst AIs: {worst_ais:?}");
+                let best_ais = {
+                    let mut best_ais = vec![];
+                    for i in 0..total_ais {
+                        if !worst_ais.contains(&i) {
+                            best_ais.push(i);
+                        }
+                    }
+                    best_ais.into_boxed_slice()
+                };
+                //println!("Best AIs: {best_ais:?}");
+                {
+                    let direction_ais = &mut lock_with_error!(shared_resources.direction_ais);
+                    let shooting_ais = &mut lock_with_error!(shared_resources.shooting_ais);
+                    for (bad_ai, good_ai) in worst_ais.iter().zip(best_ais.iter()) {
+                        direction_ais[*bad_ai] = direction_ais[*good_ai].clone();
+                        shooting_ais[*bad_ai] = shooting_ais[*good_ai].clone();
+                    }
+                }
+                {
+                    let cannons = &mut lock_with_error!(shared_resources.cannons);
+                    for cannon in cannons.iter_mut() {
+                        cannon.direction = 0.0;
+                    }
+                }
+                {
+                    let enemies = &mut lock_with_error!(shared_resources.enemies);
+                    **enemies = new_dynamic_array!(total_ais, vec![], Vec<Enemy>);
+                }
+                {
+                    let bullets = &mut lock_with_error!(shared_resources.bullets);
+                    **bullets = new_dynamic_array!(total_ais, vec![], Vec<Bullet>);
+                }
+                {
+                    let elapsed_simulation_times =
+                        &mut lock_with_error!(shared_resources.elapsed_simulation_times);
+                    for elapsed_simulation_time in elapsed_simulation_times.iter_mut() {
+                        *elapsed_simulation_time = 0.0;
+                    }
+                }
             }
         }
     })
@@ -529,7 +596,7 @@ fn create_entities(
         let shooting_decision = get_shoot_decision(ai_index, known_enemy_locations, shooting_ais);
         if shooting_decision {
             *time_since_bullet = 0.0;
-            *score -= 0.2;
+            *score -= 0.1;
             spawn_bullet(cannons, ai_index, bullets, dimensions);
         }
     }
@@ -607,7 +674,7 @@ fn update_entites(
         while cannons[ai_index].direction >= TWO_PI {
             cannons[ai_index].direction -= TWO_PI;
         }
-        *score -= delta_direction;
+        *score -= delta_direction.abs() / TWO_PI;
     }
     {
         let enemies = &mut lock_with_error!(enemies)[ai_index];

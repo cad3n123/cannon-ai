@@ -4,6 +4,7 @@ use na::{self, DMatrix, DVector};
 use rand::Rng;
 use typed_floats::Positive;
 
+#[derive(Clone)]
 pub struct NeuralNetwork {
     input_size: usize,
     output_size: usize,
