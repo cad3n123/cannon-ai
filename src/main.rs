@@ -285,6 +285,7 @@ fn run_simulation(shared_resources: SharedResources) -> JoinHandle<()> {
             let shared_resources_clone = shared_resources.arc_clone();
             let mut time_since_enemy: f32 = ENEMY_COOLDOWN - 2.0;
             let mut time_since_bullet = 0.0_f32;
+            let mut score = 0.0;
 
             ai_threads.push(thread::spawn(move || {
                 let mut last_time = Instant::now();
@@ -306,6 +307,7 @@ fn run_simulation(shared_resources: SharedResources) -> JoinHandle<()> {
                         &shared_resources_clone.enemies,
                         ai_index,
                         &shared_resources_clone.bullets,
+                        &mut score,
                     );
                     create_entities(
                         &mut time_since_enemy,
@@ -315,6 +317,7 @@ fn run_simulation(shared_resources: SharedResources) -> JoinHandle<()> {
                         &shared_resources_clone.cannons,
                         &shared_resources_clone.bullets,
                         &shared_resources_clone.enemies,
+                        &mut score,
                     );
                     update_entites(
                         &shared_resources_clone.cannons,
@@ -322,6 +325,7 @@ fn run_simulation(shared_resources: SharedResources) -> JoinHandle<()> {
                         delta_time,
                         &shared_resources_clone.enemies,
                         &shared_resources_clone.bullets,
+                        &mut score,
                     );
                 }
             }));
@@ -338,6 +342,7 @@ fn destroy_entities(
     shared_enemies: &Arc<Mutex<Box<[Vec<Enemy>]>>>,
     ai_index: usize,
     shared_bullets: &Arc<Mutex<Box<[Vec<Bullet>]>>>,
+    score: &mut f32,
 ) {
     let locked_dimensions = lock_with_error!(shared_dimensions);
     let dimensions = locked_dimensions.clone();
@@ -363,6 +368,7 @@ fn destroy_entities(
                     {
                         bullets.remove(i);
                         enemies.remove(j);
+                        *score += 1.0;
                         continue 'bullet;
                     } else {
                         j += 1;
@@ -395,6 +401,7 @@ fn create_entities(
     cannons: &Arc<Mutex<Box<[Cannon]>>>,
     bullets: &Arc<Mutex<Box<[Vec<Bullet>]>>>,
     enemies: &Arc<Mutex<Box<[Vec<Enemy>]>>>,
+    score: &mut f32,
 ) {
     if *time_since_enemy >= ENEMY_COOLDOWN {
         *time_since_enemy = 0.0;
@@ -402,6 +409,7 @@ fn create_entities(
     }
     if *time_since_bullet >= BULLET_COOLDOWN {
         *time_since_bullet = 0.0;
+        *score -= 0.2;
         spawn_bullet(cannons, ai_index, bullets, dimensions);
     }
 }
@@ -465,10 +473,13 @@ fn update_entites(
     delta_time: f32,
     enemies_clone: &Arc<Mutex<Box<[Vec<Enemy>]>>>,
     bullets_clone: &Arc<Mutex<Box<[Vec<Bullet>]>>>,
+    score: &mut f32,
 ) {
     {
         let mut cannons = lock_with_error!(cannons_clone);
-        cannons[ai_index].direction += (ai_index + 1) as f32 * delta_time;
+        let delta_direction = (ai_index + 1) as f32 * delta_time;
+        cannons[ai_index].direction += delta_direction;
+        *score -= delta_direction;
     }
     {
         let enemies = &mut lock_with_error!(enemies_clone)[ai_index];
