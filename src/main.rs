@@ -319,21 +319,29 @@ fn run_simulation(shared_resources: SharedResources) -> JoinHandle<()> {
                             &shared_resources_clone.bullets,
                             &mut score,
                         );
-                        create_entities(
-                            &mut time_since_enemy,
+                        let known_enemy_locations = get_known_enemy_locations(
                             ai_index,
-                            &mut time_since_bullet,
                             &shared_resources_clone.dimensions,
+                            &shared_resources_clone.cannons,
+                            &shared_resources_clone.enemies,
+                        );
+                        create_entities(
+                            ai_index,
+                            &mut score,
+                            &mut time_since_enemy,
+                            &mut time_since_bullet,
+                            &known_enemy_locations,
+                            &shared_resources_clone.dimensions,
+                            &shared_resources_clone.shooting_ais,
                             &shared_resources_clone.cannons,
                             &shared_resources_clone.bullets,
                             &shared_resources_clone.enemies,
-                            &mut score,
                         );
                         update_entites(
                             ai_index,
                             delta_time,
                             &mut score,
-                            &shared_resources_clone.dimensions,
+                            &known_enemy_locations,
                             &shared_resources_clone.direction_ais,
                             &shared_resources_clone.cannons,
                             &shared_resources_clone.bullets,
@@ -354,18 +362,32 @@ fn run_simulation(shared_resources: SharedResources) -> JoinHandle<()> {
     })
 }
 
-fn get_decided_direction(
+fn get_direction_decision(
     ai_index: usize,
-    known_enemy_locations: [f32; 20],
+    known_enemy_locations: &[f32; 20],
     direction_ais: &Arc<Mutex<Box<[NeuralNetwork]>>>,
 ) -> f32 {
     let direction_ais = lock_with_error!(direction_ais);
-    let decided_direction = find_largest_index_unchecked(
+    let direction_decision = find_largest_index_unchecked(
         direction_ais[ai_index]
             .run_unchecked(&DVector::from_vec(known_enemy_locations.to_vec()))
             .as_slice(),
     );
-    decided_direction as f32 - 1.0
+    direction_decision as f32 - 1.0
+}
+
+fn get_shoot_decision(
+    ai_index: usize,
+    known_enemy_locations: &[f32; 20],
+    shooting_ais: &Arc<Mutex<Box<[NeuralNetwork]>>>,
+) -> bool {
+    let shooting_ais = lock_with_error!(shooting_ais);
+    let shoot_decision = find_largest_index_unchecked(
+        shooting_ais[ai_index]
+            .run_unchecked(&DVector::from_vec(known_enemy_locations.to_vec()))
+            .as_slice(),
+    );
+    shoot_decision == 0
 }
 
 fn get_known_enemy_locations(
@@ -473,23 +495,28 @@ fn destroy_entities(
 }
 
 fn create_entities(
-    time_since_enemy: &mut f32,
     ai_index: usize,
+    score: &mut f32,
+    time_since_enemy: &mut f32,
     time_since_bullet: &mut f32,
+    known_enemy_locations: &[f32; 20],
     dimensions: &Arc<Mutex<Point>>,
+    shooting_ais: &Arc<Mutex<Box<[NeuralNetwork]>>>,
     cannons: &Arc<Mutex<Box<[Cannon]>>>,
     bullets: &Arc<Mutex<Box<[Vec<Bullet>]>>>,
     enemies: &Arc<Mutex<Box<[Vec<Enemy>]>>>,
-    score: &mut f32,
 ) {
     if *time_since_enemy >= ENEMY_COOLDOWN {
         *time_since_enemy = 0.0;
         spawn_rand_enemy(enemies, ai_index, dimensions);
     }
     if *time_since_bullet >= BULLET_COOLDOWN {
-        *time_since_bullet = 0.0;
-        *score -= 0.2;
-        spawn_bullet(cannons, ai_index, bullets, dimensions);
+        let shooting_decision = get_shoot_decision(ai_index, known_enemy_locations, shooting_ais);
+        if shooting_decision {
+            *time_since_bullet = 0.0;
+            *score -= 0.2;
+            spawn_bullet(cannons, ai_index, bullets, dimensions);
+        }
     }
 }
 
@@ -550,19 +577,17 @@ fn update_entites(
     ai_index: usize,
     delta_time: f32,
     score: &mut f32,
-    dimensions: &Arc<Mutex<Point>>,
+    known_enemy_locations: &[f32; TOTAL_VIEW_RAYS],
     direction_ais: &Arc<Mutex<Box<[NeuralNetwork]>>>,
     cannons: &Arc<Mutex<Box<[Cannon]>>>,
     bullets: &Arc<Mutex<Box<[Vec<Bullet>]>>>,
     enemies: &Arc<Mutex<Box<[Vec<Enemy>]>>>,
 ) {
     {
-        let known_enemy_locations =
-            get_known_enemy_locations(ai_index, dimensions, cannons, enemies);
-        let decided_direction =
-            get_decided_direction(ai_index, known_enemy_locations, direction_ais);
+        let direction_decision =
+            get_direction_decision(ai_index, known_enemy_locations, direction_ais);
         let mut cannons = lock_with_error!(cannons);
-        let delta_direction = decided_direction * GUN_ROTATE_VELOCITY * delta_time;
+        let delta_direction = direction_decision * GUN_ROTATE_VELOCITY * delta_time;
         cannons[ai_index].direction += delta_direction;
         while cannons[ai_index].direction >= TWO_PI {
             cannons[ai_index].direction -= TWO_PI;
