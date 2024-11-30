@@ -133,7 +133,6 @@ fn run_display(shared_resources: SharedResources) {
     drop(rl);
     shared_resources.is_running.store(false, Ordering::SeqCst);
 }
-
 fn display_info(
     selected_ai: &Arc<Mutex<usize>>,
     dimensions: &Arc<Mutex<Point>>,
@@ -152,7 +151,6 @@ fn display_info(
         Color::BLACK,
     );
 }
-
 fn create_buttons(
     total_ais_clone: &Arc<NonZero<usize>>,
     is_real_time: &Arc<AtomicBool>,
@@ -253,7 +251,6 @@ fn update_display(
     draw_buttons(buttons, d);
     draw_entities(selected_ai, cannons, d, enemies, bullets);
 }
-
 fn draw_buttons(
     buttons: &mut Box<[Rc<RefCell<Button>>]>,
     d: &mut raylib::prelude::RaylibDrawHandle<'_>,
@@ -262,7 +259,6 @@ fn draw_buttons(
         button.borrow_mut().draw(d);
     }
 }
-
 fn draw_entities(
     selected_ai: &Arc<Mutex<usize>>,
     cannons: &Arc<Mutex<Box<[Cannon]>>>,
@@ -306,7 +302,6 @@ fn update_dimensions(
         cannon.position.y = height / 2.0;
     }
 }
-
 fn run_simulation(shared_resources: SharedResources) -> JoinHandle<()> {
     thread::spawn(move || {
         while shared_resources.is_running.load(Ordering::SeqCst) {
@@ -446,7 +441,6 @@ fn run_simulation(shared_resources: SharedResources) -> JoinHandle<()> {
         }
     })
 }
-
 fn get_direction_decision(
     ai_index: usize,
     known_enemy_locations: &[f32; 20],
@@ -460,7 +454,6 @@ fn get_direction_decision(
     );
     direction_decision as f32 - 1.0
 }
-
 fn get_shoot_decision(
     ai_index: usize,
     known_enemy_locations: &[f32; 20],
@@ -474,7 +467,6 @@ fn get_shoot_decision(
     );
     shoot_decision == 0
 }
-
 fn get_known_enemy_locations(
     ai_index: usize,
     dimensions: &Arc<Mutex<Point>>,
@@ -522,7 +514,6 @@ fn get_known_enemy_locations(
     }
     known_enemy_locations
 }
-
 fn destroy_entities(
     shared_dimensions: &Arc<Mutex<Point>>,
     shared_enemies: &Arc<Mutex<Box<[Vec<Enemy>]>>>,
@@ -604,7 +595,6 @@ fn create_entities(
         }
     }
 }
-
 fn spawn_bullet(
     cannons_clone: &Arc<Mutex<Box<[Cannon]>>>,
     ai_index: usize,
@@ -627,7 +617,6 @@ fn spawn_bullet(
         },
     });
 }
-
 fn spawn_rand_enemy(
     enemies_clone: &Arc<Mutex<Box<[Vec<Enemy>]>>>,
     ai_index: usize,
@@ -651,7 +640,6 @@ fn spawn_rand_enemy(
         },
     });
 }
-
 fn get_center(dimensions_clone: &Arc<Mutex<Point>>) -> (f32, f32) {
     let dimensions = lock_with_error!(dimensions_clone);
     let (center_x, center_y) = (dimensions.x / 2.0, dimensions.y / 2.0);

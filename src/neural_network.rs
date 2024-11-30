@@ -1,5 +1,7 @@
 #![allow(dead_code)]
 
+use std::f32::consts::E;
+
 use na::{self, DMatrix, DVector};
 use rand::Rng;
 use serde::{Deserialize, Serialize};
@@ -86,7 +88,11 @@ impl NeuralNetwork {
             bias.apply(|element| {
                 *element += rng.gen_range(-change_int..change_int) as f32;
                 *element = element.clamp(0.0, 1.0);
+                *element = NeuralNetwork::activation_function(*element);
             });
         }
+    }
+    fn activation_function(value: f32) -> f32 {
+        (1.0 + E.powf(-value)).powi(-1)
     }
 }

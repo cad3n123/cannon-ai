@@ -97,7 +97,7 @@ impl Cannon {
     pub fn new() -> Self {
         Self {
             position: Point { x: 400.0, y: 300.0 },
-            direction: 1.0,
+            direction: 0.0,
         }
     }
 }
