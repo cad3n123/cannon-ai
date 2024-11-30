@@ -85,7 +85,6 @@ fn main() -> Result<(), io::Error> {
     Ok(())
 }
 fn run_cannon_ai() -> Result<(), io::Error> {
-    thread::sleep(Duration::new(2, 0));
     let shared_resources = SharedResources::new()?;
 
     let simulation = run_simulation(shared_resources.clone());
@@ -305,6 +304,7 @@ fn update_dimensions(
     }
 }
 fn run_simulation(shared_resources: SharedResources) -> JoinHandle<()> {
+    thread::sleep(Duration::new(2, 0));
     thread::spawn(move || {
         while shared_resources.is_running.load(Ordering::SeqCst) {
             let mut ai_threads: Vec<JoinHandle<()>> = vec![];
