@@ -412,6 +412,9 @@ fn run_simulation(shared_resources: SharedResources) -> JoinHandle<()> {
                     let shooting_ais = &mut lock_with_error!(shared_resources.shooting_ais);
                     for (bad_ai, good_ai) in worst_ais.iter().zip(best_ais.iter()) {
                         direction_ais[*bad_ai] = direction_ais[*good_ai].clone();
+                        direction_ais[*bad_ai].tweak_continuous(unsafe {
+                            Positive::<f32>::new_unchecked(MAX_TWEAK_CHANGE)
+                        });
                         shooting_ais[*bad_ai] = shooting_ais[*good_ai].clone();
                         shooting_ais[*bad_ai].tweak_continuous(unsafe {
                             Positive::<f32>::new_unchecked(MAX_TWEAK_CHANGE)
