@@ -68,10 +68,10 @@ use ui::Button;
 const TWO_PI: f32 = 2.0 * PI;
 const HALF_PI: f32 = PI / 2.0;
 const GUN_ROTATE_VELOCITY: f32 = 0.75;
-const BULLET_SPEED: f32 = 100.0;
-const BULLET_COOLDOWN: f32 = 2.0;
-const ENEMY_COOLDOWN: f32 = 4.0;
-const ENEMY_SPEED: f32 = 25.0;
+const BULLET_SPEED: f32 = 150.0;
+const BULLET_COOLDOWN: f32 = 1.0;
+const ENEMY_COOLDOWN: f32 = 3.0;
+const ENEMY_SPEED: f32 = 45.0;
 const ENEMY_SPAWN_DISTANCE: usize = 1;
 
 const TOTAL_VIEW_RAYS: usize = 20;
@@ -318,7 +318,7 @@ fn run_simulation(shared_resources: SharedResources) -> JoinHandle<()> {
             let mut ai_threads: Vec<JoinHandle<()>> = vec![];
             for ai_index in 0..Into::<usize>::into(*shared_resources.total_ais) {
                 let shared_resources_clone = shared_resources.arc_clone();
-                let mut time_since_enemy: f32 = ENEMY_COOLDOWN - 3.0;
+                let mut time_since_enemy: f32 = ENEMY_COOLDOWN;
                 let mut time_since_bullet = 0.0_f32;
                 let mut score = 0.0;
 
@@ -520,7 +520,7 @@ fn get_known_enemy_locations(
             if delta_angle.abs() < HALF_PI
                 && distance * delta_angle.sin().abs() <= ENEMY_WIDTH / 2.0
             {
-                *known_enemy_location = distance / VIEW_RAY_LENGTH as f32;
+                *known_enemy_location = (distance - CANNON_RADIUS) / VIEW_RAY_LENGTH as f32;
                 break;
             }
         }
@@ -577,6 +577,7 @@ fn destroy_entities(
         let center_distance = center_offset.magnitude();
         if center_distance < CANNON_RADIUS + ENEMY_HEIGHT / 2.0 {
             enemies.remove(i);
+            *score -= 1.0;
         } else {
             i += 1;
         }
