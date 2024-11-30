@@ -520,7 +520,7 @@ fn get_known_enemy_locations(
             if delta_angle.abs() < HALF_PI
                 && distance * delta_angle.sin().abs() <= ENEMY_WIDTH / 2.0
             {
-                *known_enemy_location = 1.0;
+                *known_enemy_location = distance / VIEW_RAY_LENGTH as f32;
                 break;
             }
         }
