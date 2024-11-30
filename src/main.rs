@@ -313,6 +313,7 @@ fn update_dimensions(
 }
 fn run_simulation(shared_resources: SharedResources) -> JoinHandle<()> {
     thread::spawn(move || {
+        thread::sleep(Duration::new(6, 0));
         while shared_resources.is_running.load(Ordering::SeqCst) {
             let mut ai_threads: Vec<JoinHandle<()>> = vec![];
             for ai_index in 0..Into::<usize>::into(*shared_resources.total_ais) {
