@@ -44,7 +44,8 @@ impl NeuralNetwork {
         let mut current_value = input.clone();
         for (weight, bias) in self.weights.iter().zip(self.biases.iter()) {
             let ncols = weight.ncols() as f32;
-            current_value = (weight * current_value / ncols + bias) / 2.0;
+            current_value = weight * current_value + bias;
+            current_value.apply(|value| *value = NeuralNetwork::activation_function(*value));
         }
         current_value
     }
@@ -64,13 +65,13 @@ impl NeuralNetwork {
         for weight in self.weights.iter_mut() {
             weight.apply(|element| {
                 *element += rng.gen_range(-change_float..change_float) as f32;
-                *element = element.clamp(0.0, 1.0);
+                *element = element.clamp(-1.0, 1.0);
             });
         }
         for bias in self.biases.iter_mut() {
             bias.apply(|element| {
                 *element += rng.gen_range(-change_float..change_float) as f32;
-                *element = element.clamp(0.0, 1.0);
+                *element = element.clamp(-1.0, 1.0);
             });
         }
     }
@@ -81,18 +82,17 @@ impl NeuralNetwork {
         for weight in self.weights.iter_mut() {
             weight.apply(|element| {
                 *element += rng.gen_range(-change_int..change_int) as f32;
-                *element = element.clamp(0.0, 1.0);
+                *element = element.clamp(-1.0, 1.0);
             });
         }
         for bias in self.biases.iter_mut() {
             bias.apply(|element| {
                 *element += rng.gen_range(-change_int..change_int) as f32;
-                *element = element.clamp(0.0, 1.0);
-                *element = NeuralNetwork::activation_function(*element);
+                *element = element.clamp(-1.0, 1.0);
             });
         }
     }
     fn activation_function(value: f32) -> f32 {
-        (1.0 + E.powf(-value)).powi(-1)
+        (E.powf(value)-E.powf(-value))/(E.powf(value)+E.powf(-value))
     }
 }
