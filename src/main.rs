@@ -77,7 +77,7 @@ const ENEMY_SPAWN_DISTANCE: usize = 1;
 const TOTAL_VIEW_RAYS: usize = 20;
 const VIEW_RAY_LENGTH: usize = 400;
 const FAST_DELTA_TIME: f32 = 0.005;
-const TRAINING_TIME: f32 = 40.0;
+const TRAINING_TIME: f32 = 60.0;
 const MAX_TWEAK_CHANGE: f32 = 0.05;
 
 fn main() -> Result<(), io::Error> {
