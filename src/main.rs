@@ -60,7 +60,7 @@ use std::{
         Arc, Mutex,
     },
     thread::{self, JoinHandle},
-    time::Instant,
+    time::{Duration, Instant},
 };
 use typed_floats::Positive;
 use ui::Button;
@@ -85,6 +85,7 @@ fn main() -> Result<(), io::Error> {
     Ok(())
 }
 fn run_cannon_ai() -> Result<(), io::Error> {
+    thread::sleep(Duration::new(2, 0));
     let shared_resources = SharedResources::new()?;
 
     let simulation = run_simulation(shared_resources.clone());
@@ -230,9 +231,10 @@ fn create_buttons(
 }
 fn start_raylib() -> (RaylibHandle, raylib::RaylibThread) {
     let (mut rl, thread) = raylib::init()
-        .size(800, 600)
+        .size(1000, 750)
         .title("AI Cannon")
-        .fullscreen()
+        .resizable()
+        //.fullscreen()
         .build();
 
     rl.set_target_fps(60);
