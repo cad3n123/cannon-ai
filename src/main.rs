@@ -87,9 +87,9 @@ fn main() -> Result<(), io::Error> {
 fn run_cannon_ai() -> Result<(), io::Error> {
     let shared_resources = SharedResources::new()?;
 
-    run_display(shared_resources.clone());
-
     let simulation = run_simulation(shared_resources.clone());
+
+    run_display(shared_resources.clone());
 
     simulation.join().expect("Simulation panicked");
     shared_resources.save_ais()?;
@@ -99,6 +99,14 @@ fn run_cannon_ai() -> Result<(), io::Error> {
 }
 fn run_display(shared_resources: SharedResources) {
     let (mut rl, thread) = start_raylib();
+    {
+        let mut d = rl.begin_drawing(&thread);
+        d.clear_background(Color::RAYWHITE);
+        d.draw_text("You have 5 seconds to change\nyour window size", 50, 200, 48, Color::RED);
+    }
+    
+    
+    thread::sleep(Duration::new(5, 0));
     let mut buttons = create_buttons(
         &shared_resources.total_ais,
         &shared_resources.is_real_time,
@@ -304,7 +312,6 @@ fn update_dimensions(
     }
 }
 fn run_simulation(shared_resources: SharedResources) -> JoinHandle<()> {
-    thread::sleep(Duration::new(2, 0));
     thread::spawn(move || {
         while shared_resources.is_running.load(Ordering::SeqCst) {
             let mut ai_threads: Vec<JoinHandle<()>> = vec![];
