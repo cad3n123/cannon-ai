@@ -87,9 +87,9 @@ fn main() -> Result<(), io::Error> {
 fn run_cannon_ai() -> Result<(), io::Error> {
     let shared_resources = SharedResources::new()?;
 
-    let simulation = run_simulation(shared_resources.clone());
-
     run_display(shared_resources.clone());
+
+    let simulation = run_simulation(shared_resources.clone());
 
     simulation.join().expect("Simulation panicked");
     shared_resources.save_ais()?;
