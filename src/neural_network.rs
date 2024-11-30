@@ -43,7 +43,6 @@ impl NeuralNetwork {
     pub fn run_unchecked(&self, input: &DVector<f32>) -> DVector<f32> {
         let mut current_value = input.clone();
         for (weight, bias) in self.weights.iter().zip(self.biases.iter()) {
-            let ncols = weight.ncols() as f32;
             current_value = weight * current_value + bias;
             current_value.apply(|value| *value = NeuralNetwork::activation_function(*value));
         }
