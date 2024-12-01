@@ -9,3 +9,9 @@ raylib = { git = "https://github.com/raylib-rs/raylib-rs.git" }
 
 [profile.release]
 lto = true
+
+[profile.dev]
+incremental = true
+
+[build]
+rustc-wrapper = "sccache"
