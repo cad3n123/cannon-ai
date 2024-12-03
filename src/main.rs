@@ -60,7 +60,7 @@ use std::{
         Arc, Mutex,
     },
     thread::{self, JoinHandle},
-    time::{Duration, Instant},
+    time::{self, Duration, Instant},
 };
 use typed_floats::Positive;
 use ui::Button;
@@ -100,13 +100,20 @@ fn run_cannon_ai() -> Result<(), io::Error> {
 fn run_display(shared_resources: SharedResources) {
     let (mut rl, thread) = start_raylib();
     {
-        let mut d = rl.begin_drawing(&thread);
-        d.clear_background(Color::RAYWHITE);
-        d.draw_text("You have 5 seconds to change\nyour window size", 50, 200, 48, Color::RED);
+        let now = std::time::Instant::now();
+        let total_wait = time::Duration::from_secs(5);
+        while now.elapsed() < total_wait && !rl.window_should_close() {
+            if rl.is_window_resized() {
+                update_dimensions(&rl, &shared_resources.dimensions, &shared_resources.cannons);
+            }
+            
+            let mut d: raylib::prelude::RaylibDrawHandle<'_> = rl.begin_drawing(&thread);
+            d.clear_background(Color::RAYWHITE);
+            d.draw_text("You have 5 seconds to change\nyour window size", 50, 200, 48, Color::RED);
+            thread::sleep(time::Duration::from_millis(100));
+        }
     }
     
-    
-    thread::sleep(Duration::new(5, 0));
     let mut buttons = create_buttons(
         &shared_resources.total_ais,
         &shared_resources.is_real_time,
